@@ -1,0 +1,18 @@
+# PlatformIO build system
+.pio/
+.pioenvs/
+.piolibdeps/
+.pio/build/
+.pio/libdeps/
+
+# VS Code user data
+.vscode
+
+# Logs and caches
+*.log
+*.pyc
+__pycache__/
+
+# OS-specific
+.DS_Store
+Thumbs.db
