@@ -2,28 +2,35 @@
 #include "Debug.h"
 #include "AudioOut.h"
 #include "Kick.h"
+#include "Input.h"
 
 // Pins you already use
-constexpr uint8_t PIN_BCLK = 10;   // LRCK auto = 11
+constexpr uint8_t PIN_BCLK = 10; // LRCK auto = 11
 constexpr uint8_t PIN_DATA = 12;
-constexpr int     SR       = 48000;
+constexpr int SR = 48000;
 
 AudioOut audio;
 KickSynth kick;
+Input io({.trigBtn = 6}, /*activeHigh=*/true); // your pulldown wiring
 
-void fillCallback(int16_t* dst, int nFrames, int sampleRate) {
+void fillCallback(int16_t *dst, int nFrames, int sampleRate)
+{
   kick.fillBlock(dst, nFrames, sampleRate);
 }
 
-void setup() {
+void setup()
+{
   DBG_BEGIN(115200);
 
   DBG_LED_INIT();
   delay(100);
 
   DBG_PRINTLN("[BOOT] LED init test...");
-  
-  for (int i = 0; i < 4; ++i) {
+  io.begin();
+  io.setDebounce(3, 8); // tweak if needed
+
+  for (int i = 0; i < 4; ++i)
+  {
     DBG_LED_GREEN_ON();
     delay(250);
     DBG_LED_GREEN_OFF();
@@ -40,17 +47,21 @@ void setup() {
   bool ok = audio.begin(PIN_BCLK, PIN_DATA, SR, 64, 2, /*warmupMs=*/100);
   DBG_PRINT("[INIT] AudioOut begin: %s, SR=%d, frames=%d, bufs=%d\n",
             ok ? "OK" : "FAIL", SR, audio.framesPerBlock(), 2);
-  if (!ok) while (1) {}  // simple fatal halt
+  if (!ok)
+    while (1)
+    {
+    } // simple fatal halt
 
   audio.setFillCallback(fillCallback);
-
-  // Start with an immediate trigger
-  kick.trigger();
-  DBG_PRINTLN("[INIT] First trigger issued");
-
 }
 
-void loop() {
-  audio.loop();   // services DMA; calls fillCallback when a block is needed
+void loop()
+{
+  io.poll();
+  if (io.takeTrigPressed())
+  {
+    kick.trigger();
+  }
+  audio.loop(); // services DMA; calls fillCallback when a block is needed
   // (Optionally do UI / serial / CV here)
 }
