@@ -2,6 +2,7 @@
 
 #include <ArduinoLog.h>
 #include <math.h>
+
 using namespace audio_tools;
 
 static inline float sgn_soft(float x) { return tanhf(8.0f * x); }
@@ -11,39 +12,28 @@ float CalcisHumilis::rateFromMs(float ms, int sr) {
   if (samples < 1.0f) samples = 1.0f;
   return 1.0f / samples;  // per-sample step
 }
+
 float CalcisHumilis::softClip(float x) {
   const float t = 0.95f;
   if (x > t) return t + (x - t) * 0.05f;
   if (x < -t) return -t + (x + t) * 0.05f;
   return x;
 }
-int16_t CalcisHumilis::sat16(float v) {
-  if (v > 32767.0f) v = 32767.0f;
-  if (v < -32768.0f) v = -32768.0f;
-  return (int16_t)v;
-}
+
+static inline float softSign(float x) { return tanhf(8.0f * x); }
 
 CalcisHumilis::CalcisHumilis(const CalcisConfig &cfg) : cfg_(cfg) {
-  updatePanGains();
-  applyEnvelopeRates();
-  phase = phaseInc = 0.0f;
-
-  Log.notice(F("[Calcis] ctor sr=%d base=%.1f startX=%.1f A=%.0fms P=%.0fms "
-               "C=%.0fms" CR),
-             cfg_.sampleRate, cfg_.baseHz, cfg_.startMult, cfg_.ampMs,
-             cfg_.pitchMs, cfg_.clickMs);
+  setConfig(cfg_);
 }
 
 void CalcisHumilis::setConfig(const CalcisConfig &cfg) {
   cfg_ = cfg;
   updatePanGains();
   applyEnvelopeRates();
-  Log.notice(
-      F("[Calcis] setConfig sr=%d A=%.0fms P=%.0fms C=%.0fms pan=%.2f" CR),
-      cfg_.sampleRate, cfg_.ampMs, cfg_.pitchMs, cfg_.clickMs, cfg_.pan);
 
-  hpfL.begin(cfg_.hpfHz, cfg_.sampleRate, cfg_.hpfQ);
-  hpfR.begin(cfg_.hpfHz, cfg_.sampleRate, cfg_.hpfQ);
+  //   Log.notice(
+  //       F("[Calcis] setConfig sr=%d A=%.0fms P=%.0fms C=%.0fms pan=%.2f" CR),
+  //       cfg_.sampleRate, cfg_.ampMs, cfg_.pitchMs, cfg_.clickMs, cfg_.pan);
 }
 
 void CalcisHumilis::applyEnvelopeRates() {
@@ -65,7 +55,7 @@ void CalcisHumilis::applyEnvelopeRates() {
 
 void CalcisHumilis::updatePanGains() {
   // equal-power: -1..+1 -> 0..pi/2
-  const float t = (cfg_.pan + 1.0f) * 0.5f * (PI * 0.5f);
+  const float t = (currentPan + 1.0f) * 0.5f * (PI * 0.5f);
   gainL = cosf(t);
   gainR = sinf(t);
 }
@@ -76,11 +66,18 @@ void CalcisHumilis::trigger() {
   envClick.keyOn(1.0f);
   phase = 0.0f;
   triggerLED.FadeOff((uint32_t)cfg_.ampMs);
+  currentPan = cfg_.pan;
 }
 
 void CalcisHumilis::tickLED() { triggerLED.Update(); }
 
-void CalcisHumilis::fillBlock(int16_t *dstLR, size_t nFrames) {
+static inline float clamp01(float x) {
+  if (x > 1.0f) return 1.0f;
+  if (x < -1.0f) return -1.0f;
+  return x;
+}
+
+void CalcisHumilis::fillBlock(int32_t *dstLR, size_t nFrames) {
   // tight, branchless-ish inner loop; no virtual calls
   const float sr = static_cast<float>(cfg_.sampleRate);
 
@@ -98,23 +95,24 @@ void CalcisHumilis::fillBlock(int16_t *dstLR, size_t nFrames) {
     }
 
     const float s = sinf(phase);
-    const float click = cfg_.clickAmt * c * tanhf(8.0f * s);
-    float y = (a * s + click) * cfg_.outGain;
+    const float click = cfg_.clickAmt * c * softSign(s);
+    const float y = softClip((a * s + click) * cfg_.outGain);
 
-    // equal-power pan
-    float l = y * gainL;
-    float r = y * gainR;
+    const float l = clamp01(y * gainL);
+    const float r = clamp01(y * gainR);
 
-    // High-pass (AudioTools)
-    if (cfg_.hpfEnabled) {
-      l = hpfL.process(l);
-      r = hpfR.process(r);
+    if (cfg_.kPack24In32) {
+      // 24-bit data left-justified in 32-bit word
+      const int32_t Li = static_cast<int32_t>(lrintf(l * 8388607.0f)) << 8;
+      const int32_t Ri = static_cast<int32_t>(lrintf(r * 8388607.0f)) << 8;
+      dstLR[2 * i + 0] = Li;
+      dstLR[2 * i + 1] = Ri;
+    } else {
+      // Full-range 32-bit
+      const int32_t Li = static_cast<int32_t>(lrintf(l * 2147483647.0f));
+      const int32_t Ri = static_cast<int32_t>(lrintf(r * 2147483647.0f));
+      dstLR[2 * i + 0] = Li;
+      dstLR[2 * i + 1] = Ri;
     }
-
-    // soft clip + store
-    l = softClip(l);
-    r = softClip(r);
-    dstLR[2 * i + 0] = sat16(l * 32767.0f);
-    dstLR[2 * i + 1] = sat16(r * 32767.0f);
   }
 }

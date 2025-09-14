@@ -20,10 +20,7 @@ struct CalcisConfig {
   float pitchAttackMs = 0.01f;
   float clickAttackMs = 0.001f;
 
-  // ... existing ...
-  bool hpfEnabled = true;
-  float hpfHz = 28.0f;   // ~25–35 Hz works well on kicks
-  float hpfQ = 0.7071f;  // Butterworth
+  bool kPack24In32 = false;
 };
 
 class CalcisHumilis {
@@ -37,25 +34,24 @@ class CalcisHumilis {
   void tickLED();  // call from loop() if you want
 
   // Fill an interleaved stereo block (nFrames = stereo frames)
-  void fillBlock(int16_t *dstLR, size_t nFrames);
+  void fillBlock(int32_t *dstLR, size_t nFrames);
 
  private:
   static float rateFromMs(float ms, int sr);
   static float softClip(float x);
-  static int16_t sat16(float v);
+
   void applyEnvelopeRates();
   void updatePanGains();
 
   CalcisConfig cfg_;
   audio_tools::ADSR envAmp, envPitch, envClick;
 
-  audio_tools::HighPassFilter<float> hpfL{28.0f, 48000.0f, 0.7071f};
-  audio_tools::HighPassFilter<float> hpfR{28.0f, 48000.0f, 0.7071f};
-
   float phase = 0.0f, phaseInc = 0.0f;
 
   // pan gains
   float gainL = 0.7071f, gainR = 0.7071f;
+
+  float currentPan = 0.5f;
 
   // LED
   JLed triggerLED{2};
