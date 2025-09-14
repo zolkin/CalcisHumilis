@@ -1,0 +1,31 @@
+# .clang-format
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++17
+
+# Core style
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+BreakBeforeBraces: Attach            # braces on same line
+NamespaceIndentation: None
+IndentCaseLabels: true
+
+# Keep things readable
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+SpaceBeforeParens: ControlStatements # if(...) but keep foo(bar)
+PointerAlignment: Left               # int* p -> preferred: int *p
+DerivePointerAlignment: false
+
+# Don’t reorder includes unless you want it
+SortIncludes: false
+IncludeBlocks: Merge
+
+# Nice-to-haves
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+Cpp11BracedListStyle: true
