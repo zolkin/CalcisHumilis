@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <I2S.h>
-#include <Debug.h>
+#include <ArduinoLog.h>
 
 typedef void (*AudioFillFn)(int16_t *dst, int nFrames, int sampleRate);
 

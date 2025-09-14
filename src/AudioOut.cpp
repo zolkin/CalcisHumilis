@@ -33,7 +33,7 @@ bool AudioOut::begin(uint8_t pinBclk, uint8_t pinData, int sampleRate,
     if (!i2s.begin())
         return false;
 
-    DBG_PRINT("[I2S] BCLK=GP%d, LRCK=GP%d, DATA=GP%d, SR=%d, frames=%d, bufs=%d\n", pinBclk, pinBclk + 1, pinData, sr, frames, numBuf);
+    Log.info("[I2S] BCLK=GP%d, LRCK=GP%d, DATA=GP%d, SR=%d, frames=%d, bufs=%d\n", pinBclk, pinBclk + 1, pinData, sr, frames, numBuf);
 
     // Warm-up: a little silence so the DAC locks (optional but helps PCM510x)
     if (warmupMs > 0)
@@ -50,7 +50,7 @@ bool AudioOut::begin(uint8_t pinBclk, uint8_t pinData, int sampleRate,
         }
     }
 
-    DBG_PRINT("[I2S] Warm-up %d ms of silence\n", warmupMs);
+    Log.info("[I2S] Warm-up %d ms of silence\n", warmupMs);
 
     // Prime one buffer so DMA starts
     i2s.write((uint8_t *)bufA, blockBytes);
@@ -92,15 +92,9 @@ void AudioOut::handleTx()
     size_t wrote = i2s.write((uint8_t *)buf, blockBytes);
 
     needFill = wrote == 0;
-    DBG_GUARD(underrun, !needFill);
     if (needFill)
     {
-        DBG_GUARDED_PRINTF(underrun, "[I2S] UNDERRUN #%d: queue full, will retry\n", underrunCount++);
-        DBG_LED_RED_ON(); // latch red error LED
-    }
-    else
-    {
-        DBG_LED_RED_OFF(); // latch red error LED
+        Log.info("[I2S] UNDERRUN #%d: queue full, will retry\n", underrunCount++);
     }
 }
 

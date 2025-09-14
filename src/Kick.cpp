@@ -27,7 +27,7 @@ void KickSynth::init(int sampleRate,
     sampleCounter = 0;
     ampEnv = pitchEnv = clickEnv = 0.0f;
     phase = phaseInc = 0.0f;
-    DBG_PRINT("[Kick] sr=%d base=%.1fHz startX=%.1f A=%.0fms P=%.0fms C=%.0fms click=%.2f gain=%.2f period=%dms\n",
+    Log.info("[Kick] sr=%d base=%.1fHz startX=%.1f A=%.0fms P=%.0fms C=%.0fms click=%.2f gain=%.2f period=%dms\n",
               sr, baseHz, startMult, ampMs, pitchMs, clickMs, clickAmt, outGain, trigPeriodMs);
 }
 
@@ -38,18 +38,15 @@ void KickSynth::trigger()
     clickEnv = 1.0f;
     phase = 0.0f;
 
-    DBG_PRINT("[Kick] TRIG #%lu @ %lu ms\n",
+    Log.info("[Kick] TRIG #%lu @ %lu ms\n",
               (unsigned long)trigCounter++, (unsigned long)millis());
-
-    turnOnLed();
+    triggerLED.FadeOff(ampMs);
 }
 
 void KickSynth::fillBlock(int16_t *dst, int nFrames, int /*sampleRate*/)
 {
     for (int i = 0; i < nFrames; ++i)
     {
-        autoTurnOffLed();
-
         // freq with decaying pitch
         float fNow = baseHz * (1.0f + (startMult - 1.0f) * pitchEnv);
         float targetInc = (2.0f * PI * fNow) / (float)sr;
@@ -78,4 +75,5 @@ void KickSynth::fillBlock(int16_t *dst, int nFrames, int /*sampleRate*/)
 
         sampleCounter++;
     }
+    triggerLED.Update();
 }

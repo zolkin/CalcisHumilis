@@ -1,8 +1,8 @@
 #include <Arduino.h>
-#include "Debug.h"
+#include <ArduinoLog.h>
 #include "AudioOut.h"
 #include "Kick.h"
-#include "Input.h"
+#include <Bounce2.h>
 
 // Pins you already use
 constexpr uint8_t PIN_BCLK = 10; // LRCK auto = 11
@@ -11,7 +11,11 @@ constexpr int SR = 48000;
 
 AudioOut audio;
 KickSynth kick;
-Input io({.trigBtn = 6}, /*activeHigh=*/true); // your pulldown wiring
+
+#define BTN_PIN 6   // your trigger button pin
+
+Bounce2::Button trigBtn = Bounce2::Button();
+
 
 void fillCallback(int16_t *dst, int nFrames, int sampleRate)
 {
@@ -20,32 +24,27 @@ void fillCallback(int16_t *dst, int nFrames, int sampleRate)
 
 void setup()
 {
-  DBG_BEGIN(115200);
+  Serial.begin(115200);
+  // Initialize SerialDebug
+  Log.begin(LOG_LEVEL_VERBOSE, &Serial);
 
-  DBG_LED_INIT();
   delay(100);
 
-  DBG_PRINTLN("[BOOT] LED init test...");
-  io.begin();
-  io.setDebounce(3, 8); // tweak if needed
+  
+  Log.infoln("[BOOT] Button init...");
+  trigBtn.attach(BTN_PIN, INPUT_PULLDOWN); // or INPUT if using pulldown
+  trigBtn.interval(5);                   // debounce interval in ms
+  trigBtn.setPressedState(HIGH);          // LOW = pressed if wiring to GND
 
-  for (int i = 0; i < 4; ++i)
-  {
-    DBG_LED_GREEN_ON();
-    delay(250);
-    DBG_LED_GREEN_OFF();
-    delay(250);
-  }
-
-  DBG_PRINTLN("[BOOT] Pico2 Kick starting…");
+  Log.infoln("[BOOT] Pico2 Kick starting...");
 
   // Kick params: (baseHz, startMult, ampMs, pitchMs, clickMs, clickAmt, outGain, trigPeriodMs)
   kick.init(SR, 55.0f, 6.0f, 220.0f, 30.0f, 6.0f, 0.20f, 0.85f, 2000);
-  DBG_PRINTLN("[INIT] KickSynth configured");
+  Log.infoln("[INIT] KickSynth configured");
 
   // Audio: 48k, 64-frame blocks, 2 buffers (low latency)
   bool ok = audio.begin(PIN_BCLK, PIN_DATA, SR, 64, 2, /*warmupMs=*/100);
-  DBG_PRINT("[INIT] AudioOut begin: %s, SR=%d, frames=%d, bufs=%d\n",
+  Log.infoln("[INIT] AudioOut begin: %s, SR=%d, frames=%d, bufs=%d",
             ok ? "OK" : "FAIL", SR, audio.framesPerBlock(), 2);
   if (!ok)
     while (1)
@@ -57,8 +56,9 @@ void setup()
 
 void loop()
 {
-  io.poll();
-  if (io.takeTrigPressed())
+  trigBtn.update();
+
+  if (trigBtn.pressed())
   {
     kick.trigger();
   }

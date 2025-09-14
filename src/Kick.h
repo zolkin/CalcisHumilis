@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
-#include <Debug.h>
+#include <ArduinoLog.h>
+#include <JLED.h>
 
 class KickSynth
 {
@@ -26,28 +27,12 @@ private:
     float phase = 0, phaseInc = 0;
     uint32_t sampleCounter = 0;
 
+    
+    JLed triggerLED{2};
+
 #ifdef DEBUG
     uint32_t trigCounter = 0;
     static const uint32_t LED_BLINK_SAMPLES = 1000;
-
-    int32_t ledOnSamples = 0;
-
-    void autoTurnOffLed()
-    {
-        if (ledOnSamples > 0 && ledOnSamples <= sampleCounter)
-        {
-            DBG_LED_GREEN_OFF();
-        }
-    }
-
-    void turnOnLed()
-    {
-        ledOnSamples = sampleCounter + LED_BLINK_SAMPLES;
-        DBG_LED_GREEN_ON();
-    }
-#else
-    void autoTurnOffLed() {}
-    void turnOnLed() {}
 #endif
 
     inline float softClip(float x) const
