@@ -1,67 +1,98 @@
 #include <Arduino.h>
 #include <ArduinoLog.h>
-#include "AudioOut.h"
-#include "Kick.h"
+#include <AudioTools.h>
 #include <Bounce2.h>
+#include "CalcisHumilis.h"
 
-// Pins you already use
-constexpr uint8_t PIN_BCLK = 10; // LRCK auto = 11
-constexpr uint8_t PIN_DATA = 12;
+using namespace audio_tools;
+
 constexpr int SR = 48000;
+constexpr uint8_t PIN_BCLK = 10, PIN_LRCK = 11, PIN_DATA = 12;
+constexpr uint8_t BTN_PIN  = 6;
 
-AudioOut audio;
-KickSynth kick;
+// choose a sensible audio block size (64–256 frames)
+constexpr size_t BLOCK_FRAMES = 64;
+constexpr size_t BLOCK_BYTES  = BLOCK_FRAMES * 2 /*ch*/ * sizeof(int16_t);
 
-#define BTN_PIN 6   // your trigger button pin
+// double buffer
+int16_t audioBufA[BLOCK_FRAMES * 2];
+int16_t audioBufB[BLOCK_FRAMES * 2];
 
-Bounce2::Button trigBtn = Bounce2::Button();
+int whichBuf = 0;
+uint8_t* writePtr = nullptr;
+size_t   bytesLeft = 0;
 
+CalcisConfig cfg;
+CalcisHumilis kick;
 
-void fillCallback(int16_t *dst, int nFrames, int sampleRate)
-{
-  kick.fillBlock(dst, nFrames, sampleRate);
+I2SStream i2sOut;
+Bounce2::Button trigBtn;
+
+void queueNextBlockIfNeeded() {
+  if (bytesLeft == 0) {
+    // fill next buffer
+    int16_t* buf = (whichBuf == 0) ? audioBufA : audioBufB;
+    whichBuf ^= 1;
+    kick.fillBlock(buf, BLOCK_FRAMES);
+    writePtr  = reinterpret_cast<uint8_t*>(buf);
+    bytesLeft = BLOCK_BYTES;
+  }
+
+  if (bytesLeft) {
+    size_t wrote = i2sOut.write(writePtr, bytesLeft); // single virtual per block-chunk
+    writePtr += wrote;
+    bytesLeft -= wrote;
+  }
 }
 
-void setup()
-{
+void setup() {
   Serial.begin(115200);
-  // Initialize SerialDebug
-  Log.begin(LOG_LEVEL_VERBOSE, &Serial);
+  Log.begin(LOG_LEVEL_NOTICE, &Serial);
 
-  delay(100);
+  // Button
+  trigBtn.attach(BTN_PIN, INPUT_PULLDOWN);
+  trigBtn.interval(5);
+  trigBtn.setPressedState(HIGH);
 
-  
-  Log.infoln("[BOOT] Button init...");
-  trigBtn.attach(BTN_PIN, INPUT_PULLDOWN); // or INPUT if using pulldown
-  trigBtn.interval(5);                   // debounce interval in ms
-  trigBtn.setPressedState(HIGH);          // LOW = pressed if wiring to GND
+  // I2S
+  auto icfg = i2sOut.defaultConfig(TX_MODE);
+  icfg.sample_rate     = SR;
+  icfg.channels        = 2;
+  icfg.bits_per_sample = 16;
+  icfg.pin_bck  = PIN_BCLK;
+  icfg.pin_ws   = PIN_LRCK;  // must be BCLK+1 on RP2040
+  icfg.pin_data = PIN_DATA;
+  i2sOut.begin(icfg);
 
-  Log.infoln("[BOOT] Pico2 Kick starting...");
+  // Kick params
+  cfg.sampleRate = SR;
+  cfg.baseHz     = 55.0f;
+  cfg.startMult  = 6.0f;
+  cfg.ampMs      = 220.0f;
+  cfg.pitchMs    = 30.0f;
+  cfg.clickMs    = 6.0f;
+  cfg.clickAmt   = 0.20f;
+  cfg.outGain    = 0.85f;
+  cfg.pan        = 0.0f;
 
-  // Kick params: (baseHz, startMult, ampMs, pitchMs, clickMs, clickAmt, outGain, trigPeriodMs)
-  kick.init(SR, 55.0f, 6.0f, 220.0f, 30.0f, 6.0f, 0.20f, 0.85f, 2000);
-  Log.infoln("[INIT] KickSynth configured");
+  kick.setConfig(cfg);
 
-  // Audio: 48k, 64-frame blocks, 2 buffers (low latency)
-  bool ok = audio.begin(PIN_BCLK, PIN_DATA, SR, 64, 2, /*warmupMs=*/100);
-  Log.infoln("[INIT] AudioOut begin: %s, SR=%d, frames=%d, bufs=%d",
-            ok ? "OK" : "FAIL", SR, audio.framesPerBlock(), 2);
-  if (!ok)
-    while (1)
-    {
-    } // simple fatal halt
+  // Prime first block so audio starts immediately
+  queueNextBlockIfNeeded();
 
-  audio.setFillCallback(fillCallback);
+  Log.notice(F("[Audio] Started: %d Hz, 16-bit stereo, block=%u frames" CR),
+             SR, (unsigned)BLOCK_FRAMES);
 }
 
-void loop()
-{
+void loop() {
   trigBtn.update();
-
-  if (trigBtn.pressed())
-  {
+  if (trigBtn.pressed()) {
     kick.trigger();
   }
-  audio.loop(); // services DMA; calls fillCallback when a block is needed
-  // (Optionally do UI / serial / CV here)
+
+  // pump audio: fill then write in sizable blocks
+  queueNextBlockIfNeeded();
+
+  // optional LED service outside audio path
+  kick.tickLED();
 }
