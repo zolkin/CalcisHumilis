@@ -30,6 +30,7 @@ void CalcisHumilis::setConfig(const CalcisConfig &cfg) {
   cfg_ = cfg;
   updatePanGains();
   applyEnvelopeRates();
+  gainSlew_.setTimeMs(cfg.gainSlewMs);
 
   //   Log.notice(
   //       F("[Calcis] setConfig sr=%d A=%.0fms P=%.0fms C=%.0fms pan=%.2f" CR),
@@ -80,8 +81,10 @@ static inline float clamp01(float x) {
 void CalcisHumilis::fillBlock(int32_t *dstLR, size_t nFrames) {
   // tight, branchless-ish inner loop; no virtual calls
   const float sr = static_cast<float>(cfg_.sampleRate);
+  gainSlew_.setTarget(cfg_.outGain);
 
   for (size_t i = 0; i < nFrames; ++i) {
+    const float g = gainSlew_.tick();
     const float a = envAmp.tick();
     const float p = envPitch.tick();
     const float c = envClick.tick();
@@ -96,7 +99,7 @@ void CalcisHumilis::fillBlock(int32_t *dstLR, size_t nFrames) {
 
     const float s = sinf(phase);
     const float click = cfg_.clickAmt * c * softSign(s);
-    const float y = softClip((a * s + click) * cfg_.outGain);
+    const float y = softClip((a * s + click) * g);
 
     const float l = clamp01(y * gainL);
     const float r = clamp01(y * gainR);

@@ -46,6 +46,7 @@ static void queueNextBlockIfNeeded() {
 void setup() {
   Serial.begin(115200);
   UI::waitForSerial();
+  ui.attachADS();
   Log.begin(LOG_LEVEL_NOTICE, &Serial);
 
   auto icfg = i2sOut.defaultConfig(TX_MODE);
@@ -64,7 +65,7 @@ void setup() {
   kickCfg.pitchMs = 30.0f;
   kickCfg.clickMs = 6.0f;
   kickCfg.clickAmt = 0.20f;
-  kickCfg.outGain = 0.45f;
+  kickCfg.outGain = 0.85f;
   kickCfg.pan = 0.0f;
 
   kick.setConfig(kickCfg);

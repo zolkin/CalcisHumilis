@@ -4,6 +4,8 @@
 #include <JLED.h>  // or <jled.h> depending on your install
 #include <Stream.h>
 
+#include "Slew.h"
+
 struct CalcisConfig {
   int sampleRate = 48000;
   float baseHz = 55.0f;
@@ -13,6 +15,7 @@ struct CalcisConfig {
   float clickMs = 6.0f;
   float clickAmt = 0.2f;
   float outGain = 0.85f;
+  float gainSlewMs = 3.0f;
   float pan = 0.0f;  // -1..+1 equal-power
 
   // small attacks (ms) for smooth starts
@@ -50,6 +53,7 @@ class CalcisHumilis {
 
   // pan gains
   float gainL = 0.7071f, gainR = 0.7071f;
+  SlewOnePole gainSlew_;
 
   float currentPan = 0.5f;
 
