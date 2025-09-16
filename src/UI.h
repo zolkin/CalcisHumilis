@@ -9,10 +9,8 @@
 
 // Identify each pot (extend as you add more)
 
-// Mapping + pin setup for a single pot
-struct PotSpec {
-  enum PotId { AmpDecay = 0, PitchDecay, Pan, Volume, Count };
-  enum PotResponse { RsLin, RsExp };
+struct PotSource {
+  enum PotId { A = 0, B, C, D, Count };
 
   // Source selection
   bool useAds = false;     // false = internal ADC (RAR), true = ADS1x15
@@ -20,13 +18,18 @@ struct PotSpec {
 
   // For internal ADC
   uint8_t pin = A0;
+  bool invert = false;  // set true if wired “backwards”
+};
+
+struct PotSpec {
+  enum PotResponse { RsLin, RsExp };
 
   // Mapping
   float outMin = 0.0f;
   float outMax = 1.0f;
-  float step = 0.5f;    // quantization step in output units
-  bool invert = false;  // set true if wired “backwards”
+  float step = 0.5f;  // quantization step in output units
   bool reconfig = true;
+
   PotResponse response = RsLin;
 
   float* cfgValue = nullptr;
@@ -40,42 +43,97 @@ struct PotSpec {
   }
 };
 
+struct ParameterPage {
+  bool enabled = false;
+
+  PotSpec pots[PotSource::Count];
+};
+
+struct ParameterTab {
+  static constexpr int MAX_PAGE = 4;
+
+  bool enabled = false;
+
+  ParameterPage pages[MAX_PAGE];
+};
+
 // Overall UI config (no code duplication)
 struct UIConfig {
+  enum Tabs { TabSrc = 0, TabCount };
   UIConfig(CalcisConfig* pCfg_) : pCfg(pCfg_) {
-    pots[PotSpec::AmpDecay].cfgValue = &pCfg->ampMs;
-    pots[PotSpec::PitchDecay].cfgValue = &pCfg->pitchMs;
-    pots[PotSpec::Pan].cfgValue = &pCfg->pan;
-    pots[PotSpec::Volume].cfgValue = &pCfg->outGain;
+    potTabs[TabSrc].enabled = true;
+    potTabs[TabSrc].pages[0] = ParameterPage{
+        true,
+        {
+            /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
+            {20.f, 2000.f, .1f, true, PotSpec::RsLin, &pCfg->ampMs},  /* Dec */
+            {2.f, 800.f, .1f, false, PotSpec::RsLin, &pCfg->pitchMs}, /* PDec*/
+            {-1.f, 1.f, .001f, false, PotSpec::RsLin, &pCfg->pan},    /* Pan */
+            {0.f, 1.f, .01f, false, PotSpec::RsExp, &pCfg->outGain},  /* Gain*/
+        }};
+
+    potTabs[TabSrc].pages[1] = ParameterPage{
+        true,
+        {
+            /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
+            {0.f, 1.f, .001f, true, PotSpec::RsLin,
+             &pCfg->baseOsc.morph}, /* morph */
+            {0.f, 1.f, .001f, false, PotSpec::RsLin,
+             &pCfg->baseOsc.pulseWidth},                      /* PWM*/
+            {0.f, 1.f, .01f, false, PotSpec::RsExp, nullptr}, /* Disabled */
+            {0.f, 1.f, .01f, false, PotSpec::RsExp, nullptr}, /* Disabled */
+        }};
+
+    potTabs[TabSrc].pages[2] = ParameterPage{
+        true,
+        {
+            /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
+            {0.f, 1.f, .001f, true, PotSpec::RsLin,
+             &pCfg->swarmOsc.morph}, /* morph */
+            {0.f, 1.f, .001f, false, PotSpec::RsLin,
+             &pCfg->swarmOsc.pulseWidth}, /* PWM*/
+            {0.f, 1200.f, .1f, false, PotSpec::RsExp,
+             &pCfg->swarmOsc.detuneCents}, /* Disabled */
+            {0.f, 1.f, .01f, false, PotSpec::RsExp,
+             &pCfg->swarmOsc.stereoSpread}, /* Disabled */
+        }};
   }
 
+  // Trigger button (unchanged)
   uint8_t trigPin = 6;
+
+  // NEW: Tab buttons and LEDs
+  static constexpr int kNumTabs = 4;
+
+  uint8_t tabBtnPins[kNumTabs] = {14, 15, 16, 17};  // GP14..GP17
+  uint8_t tabLedPins[kNumTabs] = {18, 19, 20, 21};  // GP18..GP21
+
+  // NEW: per-tab page counts (can change later)
+  uint8_t tabPageCount[kNumTabs] = {3, 1, 1, 1};  // Tab 0 = 1 page for now
+
+  // Scanning/timing
   uint16_t pollMs = 5;           // ~200 Hz
-  float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing “stickiness”
+  float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing
   float activityThresh = 1.0f;   // counts (default in RAR ≈ 4)
 
   CalcisConfig* pCfg;
 
-  // Pots (linear mapping)
-  PotSpec pots[static_cast<size_t>(PotSpec::Count)] = {
-      /* ADS,CH,PIN, MIN , MAX   ,STEP, INV  , RECONF,  RESPONSE */
-      {false, 0, A0, 20.f, 2000.f, .1f, false, true, PotSpec::RsLin}, /* Dec*/
-      {false, 0, A1, 2.f, 800.f, .1f, false, true, PotSpec::RsLin},   /* PDec*/
-      {false, 0, A2, -1.f, 1.f, .001f, false, false, PotSpec::RsLin}, /* Pan */
-      {true, 0, 0, 0.f, 1.f, .01f, false, false, PotSpec::RsExp},     /* Gain */
-  };
+  PotSource potSources[PotSource::Count] = {
+      /* ADS ,CH,PIN, INV*/
+      {false, 0, A0, false},
+      {false, 0, A1, false},
+      {false, 0, A2, false},
+      {true, 0, 0, false}};
+
+  // Pots
+  ParameterTab potTabs[kNumTabs];
 };
 
 class UI {
  public:
   explicit UI(UIConfig* cfg, CalcisHumilis* kick);
 
-  // Attach to your synth + config (references kept)
-
-  // Call each loop()
-  void update();
-
-  // Optional: wait until a serial terminal is open (USB-CDC boards)
+  void update();  // call each loop()
   static void waitForSerial(unsigned long timeoutMs = 3000);
 
   void attachADS();
@@ -84,54 +142,58 @@ class UI {
   UIConfig* ucfg_;
   CalcisHumilis* kick_ = nullptr;
 
+  // Buttons
   OneButton trigBtn_;
-  std::array<AnalogInput, static_cast<size_t>(PotSpec::Count)> pots_;
+  static constexpr int kNumTabs = UIConfig::kNumTabs;
+  std::array<OneButton, kNumTabs> tabBtns_;  // NEW: OneButton for tabs
+
+  // Context passed to OneButton callbacks (so we know which tab fired)
+  struct TabCtx {
+    UI* self;
+    uint8_t idx;
+  };
+  std::array<TabCtx, kNumTabs> tabCtx_;  // NEW
+
+  // Pots
+  std::array<AnalogInput, static_cast<size_t>(PotSource::Count)> pots_;
   uint32_t tPrev_ = 0;
 
-  void initAdc_();
-  void initPots_(bool adsOk);
-  static void onPress_(void* param);
+  // Tabs / pages state
+  uint8_t currentTab_ = 0;
+  uint8_t currentPage_[kNumTabs] = {0, 0, 0, 0};
 
+  // ADS  (optional)
   Adafruit_ADS1015 ads_;
-  // (optional) add to UI as a member:
   float adsVref_ = 3.3f;  // your pot runs off 3V3
 
-  // Linear map helper (shared by all pots)
+  // Setup helpers
+  void initAdc_();
+  void initPots_(bool adsOk);
+  void initTabs_();
+
+  // Handlers
+  static void onPress_(void* param);     // trigger
+  static void onTabPress_(void* param);  // NEW: tab press (select/advance)
+
+  const PotSpec& getPotSpec(int index) const {
+    return ucfg_->potTabs[currentTab_]
+        .pages[currentPage_[currentTab_]]
+        .pots[index];
+  }
+
+  // Mapping helpers
   static inline float mapLin_(int raw, int rawMax, float outMin, float outMax,
-                              bool invert) {
-    if (raw < 0) raw = 0;
-    if (raw > rawMax) raw = rawMax;
-    float x = static_cast<float>(raw) / static_cast<float>(rawMax);  // 0..1
-    if (invert) x = 1.0f - x;
-    return outMin + x * (outMax - outMin);
-  }
-
-  // Exponential/log mapping with the SAME signature as mapLinear_.
-  // - If outMin < 0 (e.g., -48 .. 0) → interpret as dB range and return linear
-  // gain.
-  // - Else → power curve in linear domain for "more control near start".
+                              bool invert);
   static inline float mapExp_(int raw, int rawMax, float outMin, float outMax,
-                              bool invert) {
-    if (raw < 0) raw = 0;
-    if (raw > rawMax) raw = rawMax;
+                              bool invert);
 
-    float x = static_cast<float>(raw) / static_cast<float>(rawMax);  // 0..1
-    if (invert) x = 1.0f - x;
-
-    // Tweak curvature here ( >1.0 = more resolution near start )
-    constexpr float kGamma = 1.6f;
-
-    if (outMin < 0.0f && outMax <= 0.0f) {
-      // Treat as dB mapping: outMin..outMax are dB (e.g., -48..0)
-      const float dB = outMin + x * (outMax - outMin);  // [-48..0]
-      return powf(10.0f, dB / 20.0f);                   // → linear gain 0..1
-    } else {
-      // Power-curve in linear domain between outMin..outMax
-      const float yNorm = powf(x, kGamma);  // 0..1 (shaped)
-      return outMin + (outMax - outMin) * yNorm;
-    }
-  }
-
-  // Process one pot by index; returns true if cfg changed
+  // Per-pot processing — returns true if config changed
   bool processPot_(int id);
+
+  // NEW: Tabs / pages
+  void scanTabButtons_();
+  void selectTab_(uint8_t tab);
+  void advancePage_();
+  void updateLeds_();
+  void blinkLed_(uint8_t tab, uint8_t count);
 };

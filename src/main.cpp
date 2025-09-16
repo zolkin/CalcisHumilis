@@ -58,16 +58,6 @@ void setup() {
   icfg.pin_data = PIN_DATA;
   i2sOut.begin(icfg);
 
-  kickCfg.sampleRate = SR;
-  kickCfg.baseHz = 75.0f;
-  kickCfg.startMult = 6.0f;
-  kickCfg.ampMs = 220.0f;
-  kickCfg.pitchMs = 30.0f;
-  kickCfg.clickMs = 6.0f;
-  kickCfg.clickAmt = 0.20f;
-  kickCfg.outGain = 0.85f;
-  kickCfg.pan = 0.0f;
-
   kick.setConfig(kickCfg);
 
   // Prime audio

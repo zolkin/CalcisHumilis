@@ -4,19 +4,29 @@
 #include <JLED.h>  // or <jled.h> depending on your install
 #include <Stream.h>
 
+#include "BaseOsc.h"
 #include "Slew.h"
+#include "Swarm.h"
+
+enum class OscMode : uint8_t { Basic = 0, Swarm };
 
 struct CalcisConfig {
-  int sampleRate = 48000;
-  float baseHz = 55.0f;
-  float startMult = 6.0f;
+  // ...existing...
+  OscMode oscMode = OscMode::Swarm;
+
+  MorphConfig baseOsc;
+  SwarmConfig swarmOsc;
+
+  float pitchSemis = 24.0f;  // knob: semitone offset from baseTuneHz
+  float startMult = 4.0f;    // unchanged (ratio for pitch env)
+
   float ampMs = 220.0f;
   float pitchMs = 30.0f;
   float clickMs = 6.0f;
   float clickAmt = 0.2f;
-  float outGain = 0.85f;
+  float outGain = 0.7f;
   float gainSlewMs = 3.0f;
-  float pan = 0.0f;  // -1..+1 equal-power
+  float pan = 0.f;
 
   // small attacks (ms) for smooth starts
   float ampAttackMs = 0.001f;
@@ -24,6 +34,15 @@ struct CalcisConfig {
   float clickAttackMs = 0.001f;
 
   bool kPack24In32 = false;
+
+  inline const int getSampleRate() const {
+    switch (oscMode) {
+      case OscMode::Basic:
+        return baseOsc.sampleRate;
+      default:
+        return baseOsc.sampleRate;
+    }
+  }
 };
 
 class CalcisHumilis {
@@ -41,22 +60,30 @@ class CalcisHumilis {
 
  private:
   static float rateFromMs(float ms, int sr);
-  static float softClip(float x);
+  float softClip(float x);
+
+  float tickBasic(float p, float sr);
 
   void applyEnvelopeRates();
   void updatePanGains();
 
   CalcisConfig cfg_;
   audio_tools::ADSR envAmp, envPitch, envClick;
+  audio_tools::ADSR envFilter;
 
-  float phase = 0.0f, phaseInc = 0.0f;
+  // Basic state
+  MorphOsc osc;
 
-  // pan gains
-  float gainL = 0.7071f, gainR = 0.7071f;
+  SwarmMorph swarm;
+
+  static inline float hzToPitch(float hz) { return log2f(hz); }  // log2 Hz
+  static inline float pitchToHz(float pit) { return exp2f(pit); }
+  static inline float semisToPitch(float s) { return s / 12.0f; }
+
   SlewOnePole gainSlew_;
-
   float currentPan = 0.5f;
 
   // LED
   JLed triggerLED{2};
+  JLed clippingLED{3};
 };
