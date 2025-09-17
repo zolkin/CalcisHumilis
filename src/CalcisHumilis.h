@@ -10,12 +10,13 @@
 
 enum class OscMode : uint8_t { Basic = 0, Swarm };
 
+template <int SR>
 struct CalcisConfig {
   // ...existing...
   OscMode oscMode = OscMode::Swarm;
 
-  MorphConfig baseOsc;
-  SwarmConfig swarmOsc;
+  MorphConfigN<1, SR> baseOsc;
+  SwarmConfig<SR> swarmOsc;
 
   float pitchSemis = 24.0f;  // knob: semitone offset from baseTuneHz
   float startMult = 4.0f;    // unchanged (ratio for pitch env)
@@ -34,23 +35,15 @@ struct CalcisConfig {
   float clickAttackMs = 0.001f;
 
   bool kPack24In32 = false;
-
-  inline const int getSampleRate() const {
-    switch (oscMode) {
-      case OscMode::Basic:
-        return baseOsc.sampleRate;
-      default:
-        return baseOsc.sampleRate;
-    }
-  }
 };
 
+template <int SR>
 class CalcisHumilis {
  public:
-  explicit CalcisHumilis(const CalcisConfig &cfg = CalcisConfig());
+  explicit CalcisHumilis(const CalcisConfig<SR> &cfg = CalcisConfig<SR>());
 
   // Update parameters & envelope rates WITHOUT resetting envelopes/phase
-  void setConfig(const CalcisConfig &cfg);
+  void setConfig(const CalcisConfig<SR> &cfg);
 
   void trigger();  // retrigger envelopes + reset phase
   void tickLED();  // call from loop() if you want
@@ -67,23 +60,25 @@ class CalcisHumilis {
   void applyEnvelopeRates();
   void updatePanGains();
 
-  CalcisConfig cfg_;
+  CalcisConfig<SR> cfg_;
   audio_tools::ADSR envAmp, envPitch, envClick;
   audio_tools::ADSR envFilter;
 
   // Basic state
-  MorphOsc osc;
+  MorphOscN<1, SR> osc;
 
-  SwarmMorph swarm;
+  SwarmMorph<10, SR, 4> swarm;
 
   static inline float hzToPitch(float hz) { return log2f(hz); }  // log2 Hz
   static inline float pitchToHz(float pit) { return exp2f(pit); }
   static inline float semisToPitch(float s) { return s / 12.0f; }
 
-  SlewOnePole gainSlew_;
+  SlewOnePoleN<1, SR> gainSlew_;
   float currentPan = 0.5f;
 
   // LED
   JLed triggerLED{2};
   JLed clippingLED{3};
 };
+
+#include "CalcisHumilis_impl.hh"

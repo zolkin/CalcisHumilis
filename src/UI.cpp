@@ -6,7 +6,7 @@
 static constexpr int kAdcMaxCode = 4095;  // RP2040 12-bit
 
 // ---------- ctor ----------
-UI::UI(UIConfig* cfg, CalcisHumilis* kick)
+UI::UI(UIConfig* cfg, CalcisHumilis<CALCIS_SR>* kick)
     : ucfg_(cfg),
       trigBtn_(cfg->trigPin, /*activeLow=*/true, /*pullupActive=*/true),
       kick_(kick) {

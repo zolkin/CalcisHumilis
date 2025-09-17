@@ -7,7 +7,6 @@
 
 using namespace audio_tools;
 
-constexpr int SR = 48000;
 constexpr uint8_t PIN_BCLK = 10, PIN_LRCK = 11, PIN_DATA = 12;
 
 constexpr size_t BLOCK_FRAMES = 64;
@@ -19,8 +18,8 @@ int whichBuf = 0;
 uint8_t* writePtr = nullptr;
 size_t bytesLeft = 0;
 
-CalcisConfig kickCfg;
-CalcisHumilis kick;
+CalcisConfig<CALCIS_SR> kickCfg;
+CalcisHumilis<CALCIS_SR> kick;
 
 I2SStream i2sOut;
 
@@ -50,7 +49,7 @@ void setup() {
   Log.begin(LOG_LEVEL_NOTICE, &Serial);
 
   auto icfg = i2sOut.defaultConfig(TX_MODE);
-  icfg.sample_rate = SR;
+  icfg.sample_rate = CALCIS_SR;
   icfg.channels = 2;
   icfg.bits_per_sample = 32;
   icfg.pin_bck = PIN_BCLK;
@@ -63,7 +62,7 @@ void setup() {
   // Prime audio
   queueNextBlockIfNeeded();
 
-  Log.notice(F("[Audio] %d Hz, 32-bit, block=%u" CR), SR,
+  Log.notice(F("[Audio] %d Hz, 32-bit, block=%u" CR), CALCIS_SR,
              (unsigned)BLOCK_FRAMES);
 }
 

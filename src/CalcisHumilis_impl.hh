@@ -1,17 +1,19 @@
-#include "CalcisHumilis.h"
-
 #include <ArduinoLog.h>
 #include <math.h>
 
+#include "CalcisHumilis.h"
+
 using namespace audio_tools;
 
-float CalcisHumilis::rateFromMs(float ms, int sr) {
+template <int SR>
+float CalcisHumilis<SR>::rateFromMs(float ms, int sr) {
   float samples = ms * (float)sr * 0.001f;
   if (samples < 1.0f) samples = 1.0f;
   return 1.0f / samples;  // per-sample step
 }
 
-float CalcisHumilis::softClip(float x) {
+template <int SR>
+float CalcisHumilis<SR>::softClip(float x) {
   const float t = 0.95f;
   const bool isClip = (x > t) || (x < -t);
   if (isClip) {
@@ -28,36 +30,40 @@ float CalcisHumilis::softClip(float x) {
 
 static inline float softSign(float x) { return tanhf(8.0f * x); }
 
-CalcisHumilis::CalcisHumilis(const CalcisConfig &cfg) : cfg_(cfg) {
+template <int SR>
+CalcisHumilis<SR>::CalcisHumilis(const CalcisConfig<SR> &cfg) : cfg_(cfg) {
   setConfig(cfg_);
 }
 
-void CalcisHumilis::setConfig(const CalcisConfig &cfg) {
+template <int SR>
+void CalcisHumilis<SR>::setConfig(const CalcisConfig<SR> &cfg) {
   cfg_ = cfg;
   applyEnvelopeRates();
-  gainSlew_.setTimeMs(cfg.gainSlewMs);
+  gainSlew_.setTimeMsAll(cfg.gainSlewMs);
   osc.setConfig(cfg_.baseOsc);
   swarm.setConfig(cfg_.swarmOsc);
 }
 
-void CalcisHumilis::applyEnvelopeRates() {
-  envAmp.setAttackRate(rateFromMs(cfg_.ampAttackMs, cfg_.getSampleRate()));
-  envAmp.setDecayRate(rateFromMs(cfg_.ampMs, cfg_.getSampleRate()));
+template <int SR>
+void CalcisHumilis<SR>::applyEnvelopeRates() {
+  envAmp.setAttackRate(rateFromMs(cfg_.ampAttackMs, SR));
+  envAmp.setDecayRate(rateFromMs(cfg_.ampMs, SR));
   envAmp.setSustainLevel(0.0f);
   envAmp.setReleaseRate(0.0f);
 
-  envPitch.setAttackRate(rateFromMs(cfg_.pitchAttackMs, cfg_.getSampleRate()));
-  envPitch.setDecayRate(rateFromMs(cfg_.pitchMs, cfg_.getSampleRate()));
+  envPitch.setAttackRate(rateFromMs(cfg_.pitchAttackMs, SR));
+  envPitch.setDecayRate(rateFromMs(cfg_.pitchMs, SR));
   envPitch.setSustainLevel(0.0f);
   envPitch.setReleaseRate(0.0f);
 
-  envClick.setAttackRate(rateFromMs(cfg_.clickAttackMs, cfg_.getSampleRate()));
-  envClick.setDecayRate(rateFromMs(cfg_.clickMs, cfg_.getSampleRate()));
+  envClick.setAttackRate(rateFromMs(cfg_.clickAttackMs, SR));
+  envClick.setDecayRate(rateFromMs(cfg_.clickMs, SR));
   envClick.setSustainLevel(0.0f);
   envClick.setReleaseRate(0.0f);
 }
 
-void CalcisHumilis::trigger() {
+template <int SR>
+void CalcisHumilis<SR>::trigger() {
   envAmp.keyOn(1.0f);
   envPitch.keyOn(1.0f);
   envClick.keyOn(1.0f);
@@ -67,7 +73,8 @@ void CalcisHumilis::trigger() {
   swarm.reset();
 }
 
-void CalcisHumilis::tickLED() {
+template <int SR>
+void CalcisHumilis<SR>::tickLED() {
   triggerLED.Update();
   clippingLED.Update();
 }
@@ -78,12 +85,13 @@ static inline float clamp01(float x) {
   return x;
 }
 
-void CalcisHumilis::fillBlock(int32_t *dstLR, size_t nFrames) {
-  const float sr = cfg_.getSampleRate();
-  gainSlew_.setTarget(cfg_.outGain);
+template <int SR>
+void CalcisHumilis<SR>::fillBlock(int32_t *dstLR, size_t nFrames) {
+  const float sr = SR;
+  gainSlew_.setTarget(0, cfg_.outGain);
 
   for (size_t i = 0; i < nFrames; ++i) {
-    const float g = gainSlew_.tick();
+    const float g = gainSlew_.tick(0);
     const float a = envAmp.tick();
     const float p = envPitch.tick();
     const float c = envClick.tick();
@@ -100,7 +108,7 @@ void CalcisHumilis::fillBlock(int32_t *dstLR, size_t nFrames) {
         swarm.tickStereo(pitch, l, r);
         break;
       default:
-        osc.tickStereo(pitch, l, r);
+        osc.tickStereo(0, pitch, l, r);
         break;
     }
 

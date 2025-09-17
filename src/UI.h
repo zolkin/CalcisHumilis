@@ -9,6 +9,8 @@
 
 // Identify each pot (extend as you add more)
 
+static constexpr int CALCIS_SR = 48000;
+
 struct PotSource {
   enum PotId { A = 0, B, C, D, Count };
 
@@ -60,7 +62,7 @@ struct ParameterTab {
 // Overall UI config (no code duplication)
 struct UIConfig {
   enum Tabs { TabSrc = 0, TabCount };
-  UIConfig(CalcisConfig* pCfg_) : pCfg(pCfg_) {
+  UIConfig(CalcisConfig<CALCIS_SR>* pCfg_) : pCfg(pCfg_) {
     potTabs[TabSrc].enabled = true;
     potTabs[TabSrc].pages[0] = ParameterPage{
         true,
@@ -77,9 +79,9 @@ struct UIConfig {
         {
             /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
             {0.f, 1.f, .001f, true, PotSpec::RsLin,
-             &pCfg->baseOsc.morph}, /* morph */
+             &pCfg->baseOsc.morph[0]}, /* morph */
             {0.f, 1.f, .001f, false, PotSpec::RsLin,
-             &pCfg->baseOsc.pulseWidth},                      /* PWM*/
+             &pCfg->baseOsc.pulseWidth[0]},                   /* PWM*/
             {0.f, 1.f, .01f, false, PotSpec::RsExp, nullptr}, /* Disabled */
             {0.f, 1.f, .01f, false, PotSpec::RsExp, nullptr}, /* Disabled */
         }};
@@ -89,9 +91,9 @@ struct UIConfig {
         {
             /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
             {0.f, 1.f, .001f, true, PotSpec::RsLin,
-             &pCfg->swarmOsc.morph}, /* morph */
+             &pCfg->swarmOsc.morph[0]}, /* morph */
             {0.f, 1.f, .001f, false, PotSpec::RsLin,
-             &pCfg->swarmOsc.pulseWidth}, /* PWM*/
+             &pCfg->swarmOsc.pulseWidth[0]}, /* PWM*/
             {0.f, 1200.f, .1f, false, PotSpec::RsExp,
              &pCfg->swarmOsc.detuneCents}, /* Disabled */
             {0.f, 1.f, .01f, false, PotSpec::RsExp,
@@ -116,14 +118,15 @@ struct UIConfig {
   float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing
   float activityThresh = 1.0f;   // counts (default in RAR ≈ 4)
 
-  CalcisConfig* pCfg;
+  CalcisConfig<CALCIS_SR>* pCfg;
 
   PotSource potSources[PotSource::Count] = {
       /* ADS ,CH,PIN, INV*/
-      {false, 0, A0, false},
-      {false, 0, A1, false},
+      {true, 0, 0, false},
       {false, 0, A2, false},
-      {true, 0, 0, false}};
+      {false, 0, A1, false},
+      {false, 0, A0, false},
+  };
 
   // Pots
   ParameterTab potTabs[kNumTabs];
@@ -131,7 +134,7 @@ struct UIConfig {
 
 class UI {
  public:
-  explicit UI(UIConfig* cfg, CalcisHumilis* kick);
+  explicit UI(UIConfig* cfg, CalcisHumilis<CALCIS_SR>* kick);
 
   void update();  // call each loop()
   static void waitForSerial(unsigned long timeoutMs = 3000);
@@ -140,7 +143,7 @@ class UI {
 
  private:
   UIConfig* ucfg_;
-  CalcisHumilis* kick_ = nullptr;
+  CalcisHumilis<CALCIS_SR>* kick_ = nullptr;
 
   // Buttons
   OneButton trigBtn_;

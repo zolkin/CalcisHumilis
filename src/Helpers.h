@@ -1,6 +1,15 @@
 #pragma once
 #include <math.h>
 
+namespace arrays {
+template <int N, typename T>
+inline std::array<T, N> filled(T const& t) {
+  std::array<T, N> res;
+  res.fill(t);
+  return res;
+}
+}  // namespace arrays
+
 namespace pitch {
 
 static inline float hzToPitch(float hz) { return log2f(hz); }  // log2 Hz

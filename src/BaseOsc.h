@@ -4,162 +4,203 @@
 
 #include "Helpers.h"  // expects pitch::hzToPitch / pitch::pitchToHz / pitch::semisToPitch
 
-struct OscConfig {
-  int sampleRate = 48000;
-  float baseTuneHz = 16.3516f;  // C0
-  float initialPan = 0.0f;      // -1..+1 equal-power
+template <int N, int SR>
+struct OscConfigN {
+  static constexpr int SAMPLE_RATE = SR;
+  static constexpr int COUNT = N;
+
+  std::array<float, N> baseTuneHz = arrays::filled<N>(16.3516f);  // C0
+  std::array<float, N> initialPan = arrays::filled<N>(0.0f);
 };
 
-template <typename Config>
-class BaseOscillator {
+template <int N, int SR, template <int, int> class Config>
+class BaseOscillatorN {
  public:
-  explicit BaseOscillator(const Config& c = Config()) { setConfig(c); }
+  using ConfigT = Config<N, SR>;
+  explicit BaseOscillatorN(const ConfigT& c = ConfigT()) { setConfig(c); }
 
-  void setConfig(const Config& c) {
+  void setConfig(const ConfigT& c) {
     cfg_ = c;
-    baseTunePitch_ = pitch::hzToPitch(cfg_.baseTuneHz);  // log2 Hz
-    sr_ = float(cfg_.sampleRate);
+
+    for (int i = 0; i < N; ++i) {
+      baseTunePitch_[i] = pitch::hzToPitch(cfg_.baseTuneHz[i]);  // log2 Hz
+    }
   }
 
   // Call on trigger/note-on; latches pan & resets phase
-  void reset(float pan = NAN) {
-    phase = 0.0f;
-    phaseInc = 0.0f;
-    currentPan_ = isnan(pan) ? cfg_.initialPan : pan;
-    updatePanGains();
+  void reset(const int i, const float pan = NAN, const float ph = 0.f) {
+    phase[i] = ph;
+    phaseInc[i] = 0.0f;
+    currentPan_[i] = isnan(pan) ? cfg_.initialPan[i] : pan;
+    updatePanGains(i);
   }
 
-  inline void setPan(float pan) {
-    currentPan_ = pan;
-    updatePanGains();
+  inline void setPan(const int i, const float pan) {
+    currentPan_[i] = pan;
+    updatePanGains(i);
   }
-  inline float pan() const { return currentPan_; }
-  inline float phaseNow() const { return phase; }
-  inline float freqNowHz() const { return pitch::pitchToHz(baseTunePitch_); }
 
-  // required state you requested (kept here so all oscs share it)
-  float baseTunePitch_ = 0.0f;  // log2(baseTuneHz)
-  float phase = 0.0f, phaseInc = 0.0f;
-
-  // per-osc smoothing factor for phaseInc (0..1). 0.25f matches your kick.
-  float smoothingAlpha_ = 0.25f;
-
-  Config cfg_;
+  inline float pan(const int i) const { return currentPan_[i]; }
+  inline float phaseNow(const int i) const { return phase[i]; }
+  inline float freqNowHz(const int i) const {
+    return pitch::pitchToHz(baseTunePitch_[i]);
+  }
 
  protected:
-  float sr_ = 48000.0f;
+  // required state you requested (kept here so all oscs share it)
+  std::array<float, N> baseTunePitch_ = {0.0f};  // log2(baseTuneHz)
+  std::array<float, N> phase = {0.0f};
+  std::array<float, N> phaseInc = {0.0f};
+
+  // per-osc smoothing factor for phaseInc (0..1). 0.25f matches your kick.
+  std::array<float, N> smoothingAlpha_ = {0.25f};
+
+  ConfigT cfg_;
 
   // pan
-  float currentPan_ = 0.0f;
-  float gainL_ = 0.7071f, gainR_ = 0.7071f;
+  std::array<float, N> currentPan_ = {0.0f};
+  std::array<float, N> gainL_ = {0.7071f};
+  std::array<float, N> gainR_ = {0.7071f};
 
   // helpers each osc will use inside tickStereo
-  inline float pitchNowFromSemis(float pitchSemis) const {
-    return baseTunePitch_ + pitch::semisToPitch(pitchSemis);
+  inline float pitchNowFromSemis(const int i, const float pitchSemis) const {
+    return baseTunePitch_[i] + pitch::semisToPitch(pitchSemis);
   }
 
-  inline float targetIncFromPitch(float pitchNow) const {
+  inline float targetIncFromPitch(const int i, const float pitchNow) const {
     const float f = pitch::pitchToHz(pitchNow);
-    return (2.0f * PI * f) / sr_;
+    return (TWO_PI * f) / SR;
   }
 
-  inline void smoothPhaseIncTowards(float targetInc) {
+  inline void smoothPhaseIncTowards(const int i, const float targetInc) {
     // set smoothingAlpha_ to 1.0f if you want immediate tracking
-    phaseInc += (targetInc - phaseInc) * smoothingAlpha_;
+    phaseInc[i] += (targetInc - phaseInc[i]) * smoothingAlpha_[i];
   }
 
-  inline float advancePhase(float pitchSemis) {
-    const float pNow = pitchNowFromSemis(pitchSemis);
-    const float trg = targetIncFromPitch(pNow);
-    smoothPhaseIncTowards(trg);
-    phase += phaseInc;
-    if (phase >= 2.0f * PI) phase -= 2.0f * PI;
-    return phase;
+  inline float advancePhase(const int i, float pitchSemis) {
+    const float pNow = pitchNowFromSemis(i, pitchSemis);
+    const float trg = targetIncFromPitch(i, pNow);
+    smoothPhaseIncTowards(i, trg);
+    phase[i] += phaseInc[i];
+    if (phase[i] >= TWO_PI) phase[i] -= TWO_PI;
+    return phase[i];
   }
 
-  inline void panOut(float s, float& outL, float& outR) const {
-    outL = s * gainL_;
-    outR = s * gainR_;
-  }
-
-  inline void updatePanGains() {
+  inline void updatePanGains(const int i) {
     // equal-power: -1..+1 → 0..pi/2
-    const float t = (currentPan_ + 1.0f) * 0.5f * (PI * 0.5f);
-    gainL_ = cosf(t);
-    gainR_ = sinf(t);
+    const float t = (currentPan_[i] + 1.0f) * 0.5f * (PI * 0.5f);
+    gainL_[i] = cosf(t);
+    gainR_[i] = sinf(t);
+  }
+
+  inline void panOut(const int i, float s, float& outL, float& outR) const {
+    outL = s * gainL_[i];
+    outR = s * gainR_[i];
   }
 };
 
 // -------- SINE --------
-class SineOsc : public BaseOscillator<OscConfig> {
+template <int N, int SR>
+class SineOscN : public BaseOscillatorN<N, SR, OscConfigN> {
  public:
   static float sine(float ph) { return sinf(ph); }
 
-  using BaseOscillator::BaseOscillator;
-  inline void tickStereo(float pitchSemis, float& outL, float& outR) {
-    panOut(sine(advancePhase(pitchSemis)), outL, outR);
+  using BaseOscillatorN<N, SR, OscConfigN>::BaseOscillatorN;
+
+  inline void tickStereo(const int i, const float pitchSemis, float& outL,
+                         float& outR) {
+    this->panOut(i, sine(this->advancePhase(i, pitchSemis)), outL, outR);
   }
 };
 
 // -------- TRIANGLE (naive, light CPU) --------
 // tri = 1 - 2*abs(saw), where saw = (ph/PI) - 1  in [-1, +1]
-class TriOsc : public BaseOscillator<OscConfig> {
+template <int N, int SR>
+class TriOscN : public BaseOscillatorN<N, SR, OscConfigN> {
  public:
-  using BaseOscillator::BaseOscillator;
+  using BaseOscillatorN<N, SR, OscConfigN>::BaseOscillatorN;
   static float tri(float ph) {
     float saw = (ph / PI) - 1.0f;     // [-1..+1] with discontinuity at wrap
     return 1.0f - 2.0f * fabsf(saw);  // [-1..+1], peak at center
   }
 
-  inline void tickStereo(float pitchSemis, float& outL, float& outR) {
-    panOut(tri(advancePhase(pitchSemis)), outL, outR);
+  inline void tickStereo(const int i, const float pitchSemis, float& outL,
+                         float& outR) {
+    this->panOut(i, tri(this->advancePhase(i, pitchSemis)), outL, outR);
   }
 };
 
 // -------- SAWTOOTH (polyblep) --------
 // saw = (ph/PI) - 1  in [-1, +1]
-class SawOsc : public BaseOscillator<OscConfig> {
+template <int N, int SR>
+class SawOscN : public BaseOscillatorN<N, SR, OscConfigN> {
  public:
-  using BaseOscillator::BaseOscillator;
+  using BaseOscillatorN<N, SR, OscConfigN>::BaseOscillatorN;
+
   static float saw(float ph, float phInc) {
-    const float t = ph / TWO_PI;
-    const float dt = phInc / TWO_PI;
-    return (ph / PI) - 1.0f - dsp::polyblep(t, dt);  // [-1..+1]
+    float t = ph * (1.0f / TWO_PI);
+    t -= floorf(t);
+    float dt = phInc * (1.0f / TWO_PI);
+    return (ph / PI) - 1.0f - dsp::polyblep(t, dt);
   }
 
-  inline void tickStereo(float pitchSemis, float& outL, float& outR) {
-    const float t = advancePhase(pitchSemis);
-    panOut(saw(t, phaseInc), outL, outR);
+  inline void tickStereo(const int i, const float pitchSemis, float& outL,
+                         float& outR) {
+    const float t = this->advancePhase(i, pitchSemis);
+    this->panOut(i, saw(t, this->phaseInc[i]), outL, outR);
   }
 };
 
-struct SquareConfig : OscConfig {
-  float pulseWidth = 0.5f;
+template <int N, int SR>
+struct SquareConfigN : OscConfigN<N, SR> {
+  std::array<float, N> pulseWidth = {0.5f};
 };
 // -------- SQUARE (50% duty, polyblep) --------
-class SquareOsc : public BaseOscillator<SquareConfig> {
+template <int N, int SR>
+class SquareOscN : public BaseOscillatorN<N, SR, SquareConfigN> {
  public:
-  using BaseOscillator::BaseOscillator;
+  using BaseOscillatorN<N, SR, SquareConfigN>::BaseOscillatorN;
 
-  static float square(float ph, float phInc, float pw = 0.5f) {
-    return (ph < (2.0f * PI) * pw) ? +1.0f : -1.0f;
+  static float square(const float ph, const float phInc,
+                      const float pw = 0.5f) {
+    // normalize
+    float t = ph * (1.0f / TWO_PI);
+    float dt = phInc * (1.0f / TWO_PI);
+
+    // base hard square
+    float s = (t < pw) ? +1.0f : -1.0f;
+
+    // rising edge at t = pw
+    float tr = t - pw;
+    tr -= floorf(tr);  // wrap to [0,1)
+    s += dsp::polyblep(tr, dt);
+
+    // falling edge at t = 0 (a.k.a. 1)
+    float tf = t;  // edge at 0
+    s -= dsp::polyblep(tf, dt);
+
+    return s;
   }
 
-  inline void tickStereo(float pitchSemis, float& outL, float& outR) {
-    const float pw = math::clamp(cfg_.pulseWidth, 0.01f, 0.99f);
-    const float t = advancePhase(pitchSemis);
-    panOut(square(t, phaseInc, pw), outL, outR);
+  inline void tickStereo(const int i, const float pitchSemis, float& outL,
+                         float& outR) {
+    const float pw = math::clamp(this->cfg_.pulseWidth[i], 0.01f, 0.99f);
+    const float ph = this->advancePhase(i, pitchSemis);
+    const float inc = this->phaseInc[i];
+    this->panOut(i, square(ph, inc, pw), outL, outR);
   }
 };
 
-struct MorphConfig : SquareConfig {
-  float morph = 0.0f;
+template <int N, int SR>
+struct MorphConfigN : SquareConfigN<N, SR> {
+  std::array<float, N> morph = {0.0f};
 };
 
 // -------- MORPH SINE->TRIANGLE->SQUARE->SAW --------
-class MorphOsc : public BaseOscillator<MorphConfig> {
+template <int N, int SR>
+class MorphOscN : public BaseOscillatorN<N, SR, MorphConfigN> {
  public:
-  using BaseOscillator::BaseOscillator;
+  using BaseOscillatorN<N, SR, MorphConfigN>::BaseOscillatorN;
 
   static constexpr float SINE_BOUND = 0.0f;
   static constexpr float TRIANGLE_BOUND = 1.0f / 3.0f;
@@ -167,25 +208,28 @@ class MorphOsc : public BaseOscillator<MorphConfig> {
   static constexpr float SAW_BOUND = 1.0;
   static constexpr float WAVES_COUNT = 3.0f;
 
-  inline void tickStereo(float pitchSemis, float& outL, float& outR) {
+  inline void tickStereo(const int i, float pitchSemis, float& outL,
+                         float& outR) {
     using namespace math;
 
-    const float ph = advancePhase(pitchSemis);
-    const float pw = math::clamp(cfg_.pulseWidth, 0.01f, 0.99f);
-    const float m = math::clamp(cfg_.morph, 0.f, 1.f);
+    const auto ph = this->advancePhase(i, pitchSemis);
+    const auto pw = math::clamp(this->cfg_.pulseWidth[i], 0.01f, 0.99f);
+    const auto m = math::clamp(this->cfg_.morph[i], 0.f, 1.f);
 
     float s;
     if (m <= TRIANGLE_BOUND) {
       const float t = (m - SINE_BOUND) * WAVES_COUNT;  // 0..1
-      s = interpolate(SineOsc::sine(ph), TriOsc::tri(ph), t);
+      s = interpolate(SineOscN<N, SR>::sine(ph), TriOscN<N, SR>::tri(ph), t);
     } else if (m <= SQUARE_BOUND) {
       const float t = (m - TRIANGLE_BOUND) * WAVES_COUNT;  // 0..1
-      s = interpolate(TriOsc::tri(ph), SquareOsc::square(ph, phaseInc, pw), t);
+      s = interpolate(TriOscN<N, SR>::tri(ph),
+                      SquareOscN<N, SR>::square(ph, this->phaseInc[i], pw), t);
     } else {
       const float t = (m - SQUARE_BOUND) * WAVES_COUNT;  // 0..1
-      s = interpolate(SquareOsc::square(ph, pw), SawOsc::saw(ph, phaseInc), t);
+      s = interpolate(SquareOscN<N, SR>::square(ph, this->phaseInc[i], pw),
+                      SawOscN<N, SR>::saw(ph, this->phaseInc[i]), t);
     }
 
-    panOut(s, outL, outR);
+    this->panOut(i, s, outL, outR);
   }
 };
