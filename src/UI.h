@@ -10,6 +10,7 @@
 // Identify each pot (extend as you add more)
 
 static constexpr int CALCIS_SR = 48000;
+using Calcis = CalcisHumilis<CALCIS_SR, 1, 1>;
 
 struct PotSource {
   enum PotId { A = 0, B, C, D, Count };
@@ -62,7 +63,7 @@ struct ParameterTab {
 // Overall UI config (no code duplication)
 struct UIConfig {
   enum Tabs { TabSrc = 0, TabCount };
-  UIConfig(CalcisConfig<CALCIS_SR>* pCfg_) : pCfg(pCfg_) {
+  UIConfig(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
     potTabs[TabSrc].enabled = true;
     potTabs[TabSrc].pages[0] = ParameterPage{
         true,
@@ -118,7 +119,7 @@ struct UIConfig {
   float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing
   float activityThresh = 1.0f;   // counts (default in RAR ≈ 4)
 
-  CalcisConfig<CALCIS_SR>* pCfg;
+  Calcis::Cfg* pCfg;
 
   PotSource potSources[PotSource::Count] = {
       /* ADS ,CH,PIN, INV*/
@@ -134,7 +135,7 @@ struct UIConfig {
 
 class UI {
  public:
-  explicit UI(UIConfig* cfg, CalcisHumilis<CALCIS_SR>* kick);
+  explicit UI(UIConfig* cfg, Calcis* kick);
 
   void update();  // call each loop()
   static void waitForSerial(unsigned long timeoutMs = 3000);
@@ -143,7 +144,7 @@ class UI {
 
  private:
   UIConfig* ucfg_;
-  CalcisHumilis<CALCIS_SR>* kick_ = nullptr;
+  Calcis* kick_ = nullptr;
 
   // Buttons
   OneButton trigBtn_;

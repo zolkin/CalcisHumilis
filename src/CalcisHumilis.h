@@ -1,25 +1,25 @@
 #pragma once
 #include <Arduino.h>
 #include <AudioTools.h>
-#include <JLED.h>  // or <jled.h> depending on your install
+#include <JLED.h>
 #include <Stream.h>
 
 #include "BaseOsc.h"
+#include "FirOversample.h"  // the helper above
 #include "Slew.h"
 #include "Swarm.h"
 
 enum class OscMode : uint8_t { Basic = 0, Swarm };
 
-template <int SR>
+template <int SR, int OS>
 struct CalcisConfig {
-  // ...existing...
   OscMode oscMode = OscMode::Swarm;
 
-  MorphConfigN<1, SR> baseOsc;
-  SwarmConfig<SR> swarmOsc;
+  MorphConfigN<1, SR * OS> baseOsc;
+  SwarmConfig<SR * OS> swarmOsc;
 
-  float pitchSemis = 24.0f;  // knob: semitone offset from baseTuneHz
-  float startMult = 4.0f;    // unchanged (ratio for pitch env)
+  float pitchSemis = 24.0f;
+  float startMult = 4.0f;
 
   float ampMs = 220.0f;
   float pitchMs = 30.0f;
@@ -29,7 +29,6 @@ struct CalcisConfig {
   float gainSlewMs = 3.0f;
   float pan = 0.f;
 
-  // small attacks (ms) for smooth starts
   float ampAttackMs = 0.001f;
   float pitchAttackMs = 0.01f;
   float clickAttackMs = 0.001f;
@@ -37,16 +36,18 @@ struct CalcisConfig {
   bool kPack24In32 = false;
 };
 
-template <int SR>
+// -------------------- NEW: OS template param --------------------
+// NTAPS is configurable; 63 is a decent default for 2–4x OS.
+template <int SR, int OS = 1, int NTAPS = 63>
 class CalcisHumilis {
  public:
-  explicit CalcisHumilis(const CalcisConfig<SR> &cfg = CalcisConfig<SR>());
+  using Cfg = CalcisConfig<SR, OS>;
 
-  // Update parameters & envelope rates WITHOUT resetting envelopes/phase
-  void setConfig(const CalcisConfig<SR> &cfg);
+  explicit CalcisHumilis(const Cfg &cfg = Cfg());
 
-  void trigger();  // retrigger envelopes + reset phase
-  void tickLED();  // call from loop() if you want
+  void setConfig(const Cfg &cfg);
+  void trigger();
+  void tickLED();
 
   // Fill an interleaved stereo block (nFrames = stereo frames)
   void fillBlock(int32_t *dstLR, size_t nFrames);
@@ -54,31 +55,29 @@ class CalcisHumilis {
  private:
   static float rateFromMs(float ms, int sr);
   float softClip(float x);
-
-  float tickBasic(float p, float sr);
-
   void applyEnvelopeRates();
-  void updatePanGains();
 
-  CalcisConfig<SR> cfg_;
-  audio_tools::ADSR envAmp, envPitch, envClick;
-  audio_tools::ADSR envFilter;
-
-  // Basic state
-  MorphOscN<1, SR> osc;
-
-  SwarmMorph<10, SR, 4> swarm;
-
-  static inline float hzToPitch(float hz) { return log2f(hz); }  // log2 Hz
+  static inline float hzToPitch(float hz) { return log2f(hz); }
   static inline float pitchToHz(float pit) { return exp2f(pit); }
   static inline float semisToPitch(float s) { return s / 12.0f; }
 
-  SlewOnePoleN<1, SR> gainSlew_;
+  Cfg cfg_;
+  audio_tools::ADSR envAmp, envPitch, envClick;
+  audio_tools::ADSR envFilter;  // unused here but kept
+
+  // Oscillators run at OS*SR so their phase math sees true step size
+  MorphOscN<1, SR * OS> osc;
+  SwarmMorph<10, SR * OS> swarm;
+
+  SlewOnePoleN<1, SR> gainSlew_{};
   float currentPan = 0.5f;
 
-  // LED
+  // LEDs
   JLed triggerLED{2};
   JLed clippingLED{3};
+
+  // FIR at OS*SR, then decimate by OS
+  OversampleDecimator<OS, NTAPS> osDecim_;
 };
 
 #include "CalcisHumilis_impl.hh"

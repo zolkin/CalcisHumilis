@@ -46,12 +46,12 @@ class BaseOscillatorN {
     return pitch::pitchToHz(baseTunePitch_[i]);
   }
 
- protected:
   // required state you requested (kept here so all oscs share it)
   std::array<float, N> baseTunePitch_ = {0.0f};  // log2(baseTuneHz)
   std::array<float, N> phase = {0.0f};
   std::array<float, N> phaseInc = {0.0f};
 
+ protected:
   // per-osc smoothing factor for phaseInc (0..1). 0.25f matches your kick.
   std::array<float, N> smoothingAlpha_ = {0.25f};
 

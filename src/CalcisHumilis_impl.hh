@@ -5,65 +5,61 @@
 
 using namespace audio_tools;
 
-template <int SR>
-float CalcisHumilis<SR>::rateFromMs(float ms, int sr) {
+template <int SR, int OS, int NTAPS>
+float CalcisHumilis<SR, OS, NTAPS>::rateFromMs(float ms, int sr) {
   float samples = ms * (float)sr * 0.001f;
   if (samples < 1.0f) samples = 1.0f;
   return 1.0f / samples;  // per-sample step
 }
 
-template <int SR>
-float CalcisHumilis<SR>::softClip(float x) {
+template <int SR, int OS, int NTAPS>
+float CalcisHumilis<SR, OS, NTAPS>::softClip(float x) {
   const float t = 0.95f;
   const bool isClip = (x > t) || (x < -t);
-  if (isClip) {
-    clippingLED.FadeOff(30);
-  }
-  if (x > t) {
-    return t + (x - t) * 0.05f;
-  }
-  if (x < -t) {
-    return -t + (x + t) * 0.05f;
-  }
+  if (isClip) clippingLED.FadeOff(30);
+  if (x > t) return t + (x - t) * 0.05f;
+  if (x < -t) return -t + (x + t) * 0.05f;
   return x;
 }
 
-static inline float softSign(float x) { return tanhf(8.0f * x); }
-
-template <int SR>
-CalcisHumilis<SR>::CalcisHumilis(const CalcisConfig<SR> &cfg) : cfg_(cfg) {
+template <int SR, int OS, int NTAPS>
+CalcisHumilis<SR, OS, NTAPS>::CalcisHumilis(const Cfg &cfg) : cfg_(cfg) {
   setConfig(cfg_);
+  if constexpr (OS > 1) osDecim_.setup();
 }
 
-template <int SR>
-void CalcisHumilis<SR>::setConfig(const CalcisConfig<SR> &cfg) {
+template <int SR, int OS, int NTAPS>
+void CalcisHumilis<SR, OS, NTAPS>::setConfig(const Cfg &cfg) {
   cfg_ = cfg;
-  applyEnvelopeRates();
-  gainSlew_.setTimeMsAll(cfg.gainSlewMs);
-  osc.setConfig(cfg_.baseOsc);
-  swarm.setConfig(cfg_.swarmOsc);
 }
 
-template <int SR>
-void CalcisHumilis<SR>::applyEnvelopeRates() {
-  envAmp.setAttackRate(rateFromMs(cfg_.ampAttackMs, SR));
-  envAmp.setDecayRate(rateFromMs(cfg_.ampMs, SR));
+template <int SR, int OS, int NTAPS>
+void CalcisHumilis<SR, OS, NTAPS>::applyEnvelopeRates() {
+  envAmp.setAttackRate(rateFromMs(cfg_.ampAttackMs, SR * OS));
+  envAmp.setDecayRate(rateFromMs(cfg_.ampMs, SR * OS));
   envAmp.setSustainLevel(0.0f);
   envAmp.setReleaseRate(0.0f);
 
-  envPitch.setAttackRate(rateFromMs(cfg_.pitchAttackMs, SR));
-  envPitch.setDecayRate(rateFromMs(cfg_.pitchMs, SR));
+  envPitch.setAttackRate(rateFromMs(cfg_.pitchAttackMs, SR * OS));
+  envPitch.setDecayRate(rateFromMs(cfg_.pitchMs, SR * OS));
   envPitch.setSustainLevel(0.0f);
   envPitch.setReleaseRate(0.0f);
 
-  envClick.setAttackRate(rateFromMs(cfg_.clickAttackMs, SR));
-  envClick.setDecayRate(rateFromMs(cfg_.clickMs, SR));
+  envClick.setAttackRate(rateFromMs(cfg_.clickAttackMs, SR * OS));
+  envClick.setDecayRate(rateFromMs(cfg_.clickMs, SR * OS));
   envClick.setSustainLevel(0.0f);
   envClick.setReleaseRate(0.0f);
 }
 
-template <int SR>
-void CalcisHumilis<SR>::trigger() {
+template <int SR, int OS, int NTAPS>
+void CalcisHumilis<SR, OS, NTAPS>::trigger() {
+  applyEnvelopeRates();
+  gainSlew_.setTimeMsAll(cfg_.gainSlewMs);
+
+  // These configs are at base SR; oscillators are templated at SR*OS
+  osc.setConfig(cfg_.baseOsc);
+  swarm.setConfig(cfg_.swarmOsc);
+
   envAmp.keyOn(1.0f);
   envPitch.keyOn(1.0f);
   envClick.keyOn(1.0f);
@@ -71,10 +67,12 @@ void CalcisHumilis<SR>::trigger() {
   triggerLED.FadeOff((uint32_t)cfg_.ampMs);
   osc.reset(cfg_.pan);
   swarm.reset();
+
+  if constexpr (OS > 1) osDecim_.reset();
 }
 
-template <int SR>
-void CalcisHumilis<SR>::tickLED() {
+template <int SR, int OS, int NTAPS>
+void CalcisHumilis<SR, OS, NTAPS>::tickLED() {
   triggerLED.Update();
   clippingLED.Update();
 }
@@ -85,42 +83,88 @@ static inline float clamp01(float x) {
   return x;
 }
 
-template <int SR>
-void CalcisHumilis<SR>::fillBlock(int32_t *dstLR, size_t nFrames) {
-  const float sr = SR;
+template <int SR, int OS, int NTAPS>
+void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
   gainSlew_.setTarget(0, cfg_.outGain);
 
   for (size_t i = 0; i < nFrames; ++i) {
-    const float g = gainSlew_.tick(0);
-    const float a = envAmp.tick();
-    const float p = envPitch.tick();
-    const float c = envClick.tick();
+    // Controls advance at base rate (one step per output frame)
 
-    float s = 0.0f;
+    float outL = 0.0f, outR = 0.0f;
 
-    float l, r;
+    if constexpr (OS == 1) {
+      // ---------- No oversampling path ----------
+      const float g = gainSlew_.tick(0);
+      const float a = envAmp.tick();
+      const float p = envPitch.tick();
+      const float c = envClick.tick();  // currently unused
 
-    const float pitch =
-        cfg_.pitchSemis + pitch::pitchToSemis(p * cfg_.startMult);
+      const float pitchSemis =
+          cfg_.pitchSemis + pitch::pitchToSemis(p * cfg_.startMult);
+      float l = 0.f, r = 0.f;
+      switch (cfg_.oscMode) {
+        case OscMode::Swarm:
+          swarm.tickStereo(pitchSemis, l, r);
+          break;
+        default:
+          osc.tickStereo(0, pitchSemis, l, r);
+          break;
+      }
+      l = softClip(l * a * g);
+      r = softClip(r * a * g);
+      outL = l;
+      outR = r;
 
-    switch (cfg_.oscMode) {
-      case OscMode::Swarm:
-        swarm.tickStereo(pitch, l, r);
-        break;
-      default:
-        osc.tickStereo(0, pitch, l, r);
-        break;
+    } else {
+      // ---------- Oversampled path: run osc at OS*SR, FIR at OS*SR, decimate
+      // ----------
+      float l_os = 0.f, r_os = 0.f;
+      float l_f = 0.f, r_f = 0.f;
+
+      // Zero-order hold for control values within the frame
+      for (int k = 0; k < OS; ++k) {
+        const float g = gainSlew_.tick(0);
+        const float a = envAmp.tick();
+        const float p = envPitch.tick();
+        const float c = envClick.tick();  // currently unused
+
+        const float pitchSemis =
+            cfg_.pitchSemis + pitch::pitchToSemis(p * cfg_.startMult);
+        // Generate at OS*SR
+        switch (cfg_.oscMode) {
+          case OscMode::Swarm:
+            swarm.tickStereo(pitchSemis, l_os, r_os);
+            break;
+          default:
+            osc.tickStereo(0, pitchSemis, l_os, r_os);
+            break;
+        }
+        // Apply amplitude & output gain at OS-rate (still ZOH controls)
+        l_os *= (a * g);
+        r_os *= (a * g);
+
+        // Soft clip pre/post filter? Prefer post-filter to avoid distorting
+        // FIR. We'll do gentle soft clip *after* decimation; here feed FIR raw.
+        float l_y, r_y;
+        osDecim_.fir.tickStereo(l_os, r_os, l_y, r_y);
+
+        // Take every OS-th filtered sample
+        if (k == OS - 1) {
+          outL = l_y;
+          outR = r_y;
+        }
+      }
+      // Final soft clip after anti-alias low-pass
+      outL = softClip(outL);
+      outR = softClip(outR);
     }
 
-    l = softClip((a * l) * g);
-    r = softClip((a * r) * g);
-
     if (cfg_.kPack24In32) {
-      dstLR[2 * i + 0] = (int32_t)lrintf(l * 8388607.0f) << 8;
-      dstLR[2 * i + 1] = (int32_t)lrintf(r * 8388607.0f) << 8;
+      dstLR[2 * i + 0] = (int32_t)lrintf(outL * 8388607.0f) << 8;
+      dstLR[2 * i + 1] = (int32_t)lrintf(outR * 8388607.0f) << 8;
     } else {
-      dstLR[2 * i + 0] = (int32_t)lrintf(l * 2147483647.0f);
-      dstLR[2 * i + 1] = (int32_t)lrintf(r * 2147483647.0f);
+      dstLR[2 * i + 0] = (int32_t)lrintf(outL * 2147483647.0f);
+      dstLR[2 * i + 1] = (int32_t)lrintf(outR * 2147483647.0f);
     }
   }
 }

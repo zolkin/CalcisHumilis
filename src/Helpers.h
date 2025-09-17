@@ -56,4 +56,13 @@ inline float interpolate(float from, float to, float t) {
 
 static constexpr float INV_PI = 1.0f / PI;
 
+template <int N>
+constexpr std::array<int, N> fillRingIdx() {
+  std::array<int, N> ring;
+  for (int i = 0; i < N; ++i) {
+    ring[i] = i % 2 ? (i + 1) / 2 : -i / 2;
+  }
+  return ring;
+}
+
 }  // namespace math

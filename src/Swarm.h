@@ -6,34 +6,17 @@ struct SwarmConfig : public MorphConfigN<1, SR> {
   int voices = 2;             // 1..kMaxSwarmVoices
   float detuneCents = 1.0f;   // spread per "ring" in cents (±c, ±2c, ...)
   float stereoSpread = 1.0f;  // 0..1 width (0=center, 1=full L/R)
-  float gainBase = 0.7f;      // center weight curve: w = gainBase^(ring)
+  float gainBase = 0.6f;      // center weight curve: w = gainBase^(ring)
   bool randomPhase = true;    // optional: randomize per-voice phase on reset
 };
 
-template <int SR>
-struct OnePoleLP {
-  float zL = 0, zR = 0;
-  // fc in Hz
-  void set(float fc) { a = expf(-2.0f * PI * fc / SR); }
-
-  float a = 0.0f;
-
-  inline void process(float& L, float& R) {
-    zL += (1.0f - a) * (L - zL);
-    zR += (1.0f - a) * (R - zR);
-    L = zL;
-    R = zR;
-  }
-};
-
-template <int N, int SR, int OS>
+template <int N, int SR>
 class SwarmMorph {
   static constexpr int kMaxSwarmVoices = N;
-  static constexpr int kEffectiveSR = SR * OS;
+  static constexpr int kEffectiveSR = SR;
 
  public:
   explicit SwarmMorph(const SwarmConfig<SR>& c = SwarmConfig<SR>()) {
-    lp_.set(0.45f * 0.5f * SR);
     setConfig(c);
   }
 
@@ -48,11 +31,10 @@ class SwarmMorph {
     MorphConfigN<N, kEffectiveSR> oc;
     oc.baseTuneHz.fill(cfg_.baseTuneHz[0]);
     oc.pulseWidth.fill(cfg_.pulseWidth[0]);  // ← key line
-    oc.initialPan.fill(0.0f);                // we set per-voice pan at reset()
+    oc.morph.fill(cfg_.morph[0]);
+    oc.initialPan.fill(0.0f);  // we set per-voice pan at reset()
     voices_.setConfig(oc);
   }
-
-  OnePoleLP<SR * OS> lp_;
 
   // Reset: seed per-voice detune, pan, gains; latch phases/pans.
   void reset() {
@@ -62,8 +44,9 @@ class SwarmMorph {
     seedGains(VN);
 
     for (int i = 0; i < VN; ++i) {
-      voices_.reset(i, voices_.pan(i),
-                    !cfg_.randomPhase ? 0.f : rand01() * TWO_PI);
+      float basePhase = (2.0f * PI * i) / VN;  // evenly spaced
+      float jitter = cfg_.randomPhase ? rand01() * 0.1f * TWO_PI : 0.f;
+      voices_.reset(i, voices_.pan(i), basePhase + jitter);
     }
   }
 
@@ -72,24 +55,14 @@ class SwarmMorph {
   inline void tickStereo(const float totalPitchSemis, float& outL,
                          float& outR) {
     const int VN = cfg_.voices;
-    float L = 0.f, R = 0.f;
-    // render and filter at OS rate
-    for (int j = 0; j < OS; ++j) {
-      float accL = 0.f, accR = 0.f;
-      for (int i = 0; i < VN; ++i) {
-        float vL, vR;
-        voices_.tickStereo(i, totalPitchSemis + detuneSemis_[i], vL, vR);
-        accL += gains_[i] * vL;
-        accR += gains_[i] * vR;
-      }
-      lp_.process(accL, accR);  // LPF runs at SR*OS
-      L = accL;
-      R = accR;  // keep last filtered subsample (decimate-by-pick)
-      // (Option: accumulate and average OS subsamples after filtering; see
-      // below)
+    outL = 0.f;
+    outR = 0.f;
+    for (int i = 0; i < VN; ++i) {
+      float vL, vR;
+      voices_.tickStereo(i, totalPitchSemis + detuneSemis_[i], vL, vR);
+      outL += gains_[i] * vL;
+      outR += gains_[i] * vR;
     }
-    outL = L;
-    outR = R;
   }
 
   // public knobs you might tweak live
@@ -98,7 +71,7 @@ class SwarmMorph {
 
  private:
   SwarmConfig<SR> cfg_;
-  MorphOscN<kMaxSwarmVoices, SR * OS> voices_;
+  MorphOscN<kMaxSwarmVoices, SR> voices_;
 
   std::array<float, N> detuneSemis_ = {0};  // per-voice detune in semitones
   std::array<float, N> gains_ = {0.7f};
@@ -128,26 +101,18 @@ class SwarmMorph {
 
   // equal-power pan positions across [-spread, +spread] with center priority
   void seedPan(int VN) {
-    // map voice index order to ring order (0, +1, -1, +2, -2, ...)
-    int order[kMaxSwarmVoices];
-    int idx = 0;
-    if (VN & 1) order[idx++] = 0;
-    for (int k = 1; idx < VN; ++k) {
-      order[idx++] = +k;
-      if (idx < VN) order[idx++] = -k;
-    }
+    static const std::array<int, kMaxSwarmVoices> kRingOrder =
+        math::fillRingIdx<kMaxSwarmVoices>();
 
-    // normalized pan slots from -1..+1 scaled by stereoSpread
-    // center (0) = 0, ±1 rings spread outward linearly
+    const int maxRing = (VN % 2) ? (VN - 1) / 2 : (VN / 2);
     const float spread = cfg_.stereoSpread;
     for (int i = 0; i < VN; ++i) {
-      const int ring = order[i];
+      const int ring = kRingOrder[i];
       float p = 0.0f;
       if (VN == 1)
         p = 0.0f;
       else {
         // max ring index for this N
-        const int maxRing = (VN & 1) ? (VN - 1) / 2 : (VN / 2);
         p = (maxRing ? float(ring) / float(maxRing) : 0.0f);
       }
       voices_.setPan(i, math::clamp(p * spread, -1.0f, 1.0f));
@@ -159,21 +124,21 @@ class SwarmMorph {
     float wSum = 0.0f;
     int idx = 0;
     if (VN & 1) {
-      gains_[idx++] = 1.0f;  // center ring=0 => base^0 = 1
+      gains_[idx++] = 1.0f;
       wSum += 1.0f;
     }
     for (int k = 1; idx < VN; ++k) {
-      const float w = powf(cfg_.gainBase, float(k));  // ring k weight
-      // two voices per ring (±k)
+      const float w = powf(cfg_.gainBase, float(k));
       gains_[idx++] = w;
       wSum += w;
-      if (idx < VN) {
-        gains_[idx++] = w;
-        wSum += w;
+      if (idx >= VN) {
+        break;
       }
+      gains_[idx++] = w;
+      wSum += w;
     }
-    // normalize to sum=1
     const float inv = (wSum > 0.0f) ? (1.0f / wSum) : 1.0f;
-    for (int i = 0; i < VN; ++i) gains_[i] *= inv;
+    const float norm = inv / sqrtf(float(VN));
+    for (int i = 0; i < VN; ++i) gains_[i] *= norm;
   }
 };
