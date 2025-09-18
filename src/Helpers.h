@@ -1,6 +1,10 @@
 #pragma once
 #include <math.h>
 
+#include "Constants.h"
+
+namespace zlkm {
+
 namespace arrays {
 template <int N, typename T>
 inline std::array<T, N> filled(T const& t) {
@@ -65,4 +69,13 @@ constexpr std::array<int, N> fillRingIdx() {
   return ring;
 }
 
+static inline float rand01() {
+  static uint32_t rng = 0x6d5fca4b;
+  rng ^= rng << 13;
+  rng ^= rng >> 17;
+  rng ^= rng << 5;
+  return (rng >> 8) * (1.0f / 16777216.0f);
+}
+
 }  // namespace math
+}  // namespace zlkm

@@ -1,19 +1,26 @@
 #pragma once
-#include "BaseOsc.h"  // includes BaseOscillator, MorphOsc, math::clamp, etc.
+#include <math.h>
+
+#include <array>
+
+#include "BaseOsc.h"  // zlkm::MorphOscN<N,SR>
 
 template <int SR>
-struct SwarmConfig : public MorphConfigN<1, SR> {
-  int voices = 2;             // 1..kMaxSwarmVoices
-  float detuneCents = 1.0f;   // spread per "ring" in cents (±c, ±2c, ...)
-  float stereoSpread = 1.0f;  // 0..1 width (0=center, 1=full L/R)
-  float gainBase = 0.6f;      // center weight curve: w = gainBase^(ring)
-  bool randomPhase = true;    // optional: randomize per-voice phase on reset
+struct SwarmConfig {
+  int voices = 4;             // 1..N
+  float baseTuneHz = 65.0f;   // base tuning in Hz
+  float detuneCents = 3.0f;   // spread per ring (±c, ±2c, …)
+  float stereoSpread = 0.6f;  // 0..1 width
+  float gainBase = 0.6f;      // center weight: base^ring
+  bool randomPhase = true;    // randomize start phase
+  float morph = 0.166666f;    // 0=sine..1=saw morph
+  float pulseWidth = 0.4f;    // square duty cycle
 };
 
+// ---------------- Swarm ----------------
 template <int N, int SR>
 class SwarmMorph {
   static constexpr int kMaxSwarmVoices = N;
-  static constexpr int kEffectiveSR = SR;
 
  public:
   explicit SwarmMorph(const SwarmConfig<SR>& c = SwarmConfig<SR>()) {
@@ -22,123 +29,118 @@ class SwarmMorph {
 
   void setConfig(const SwarmConfig<SR>& c) {
     cfg_ = c;
-    // clamp safe ranges
-    cfg_.voices = math::clamp(cfg_.voices, 1, N);
-    cfg_.stereoSpread = math::clamp(cfg_.stereoSpread, 0.0f, 1.0f);
-    cfg_.pulseWidth[0] = math::clamp(cfg_.pulseWidth[0], 0.01f, 0.99f);
-
-    // push common OscConfig fields to children
-    MorphConfigN<N, kEffectiveSR> oc;
-    oc.baseTuneHz.fill(cfg_.baseTuneHz[0]);
-    oc.pulseWidth.fill(cfg_.pulseWidth[0]);  // ← key line
-    oc.morph.fill(cfg_.morph[0]);
-    oc.initialPan.fill(0.0f);  // we set per-voice pan at reset()
-    voices_.setConfig(oc);
+    cfg_.voices = zlkm::math::clamp(cfg_.voices, 1, N);
+    osc_.morph.fill(cfg_.morph);
+    osc_.pulseWidth.fill(cfg_.pulseWidth);
   }
 
-  // Reset: seed per-voice detune, pan, gains; latch phases/pans.
   void reset() {
     const int VN = cfg_.voices;
-    seedDetuneCents(VN);
+    seedDetune(VN);
     seedPan(VN);
     seedGains(VN);
-
-    for (int i = 0; i < VN; ++i) {
-      float basePhase = (2.0f * PI * i) / VN;  // evenly spaced
-      float jitter = cfg_.randomPhase ? rand01() * 0.1f * TWO_PI : 0.f;
-      voices_.reset(i, voices_.pan(i), basePhase + jitter);
-    }
+    osc_.reset(cfg_.randomPhase);
   }
 
-  // One-sample stereo render.
-  // totalPitchSemis: your summed pitch (knob + env + CV) in semitones.
   inline void tickStereo(const float totalPitchSemis, float& outL,
                          float& outR) {
     const int VN = cfg_.voices;
-    outL = 0.f;
-    outR = 0.f;
+
+    // base freq in Hz
+    const float baseMul = exp2f(totalPitchSemis * (1.f / 12.f));
+    const float f0 = cfg_.baseTuneHz * baseMul;
+
     for (int i = 0; i < VN; ++i) {
-      float vL, vR;
-      voices_.tickStereo(i, totalPitchSemis + detuneSemis_[i], vL, vR);
-      outL += gains_[i] * vL;
-      outR += gains_[i] * vR;
+      osc_.freqNowHz[i] = f0 * detuneMul_[i];
     }
+    // for (int i = VN; i < N; ++i) osc_.freqNowHz[i] = 0.f;
+
+    osc_.tickFirst(cfg_.voices, tmp_);
+
+    float L = 0.f, R = 0.f;
+    for (int i = 0; i < VN; ++i) {
+      const float v = gains_[i] * tmp_[i];
+      L += v * panL_[i];
+      R += v * panR_[i];
+    }
+    outL = L;
+    outR = R;
   }
 
-  // public knobs you might tweak live
-  float smoothingAlpha_ = 0.25f;  // forwarded to children on reset()
   SwarmConfig<SR>& cfg() { return cfg_; }
 
  private:
-  SwarmConfig<SR> cfg_;
-  MorphOscN<kMaxSwarmVoices, SR> voices_;
+  // ---------------- helpers ----------------
+  static inline float panGainL(float p) { return sqrtf(0.5f * (1.f - p)); }
+  static inline float panGainR(float p) { return sqrtf(0.5f * (1.f + p)); }
 
-  std::array<float, N> detuneSemis_ = {0};  // per-voice detune in semitones
-  std::array<float, N> gains_ = {0.7f};
-
-  // ---------- helpers ----------
-
-  static inline float rand01() {
-    static uint32_t rng = 0x6d5fca4b;
-    rng ^= rng << 13;
-    rng ^= rng >> 17;
-    rng ^= rng << 5;
-    return (rng >> 8) * (1.0f / 16777216.0f);
-  }
-
-  // symmetric cents table → semitone offsets: {0, +c, -c, +2c, -2c, ...}
-  void seedDetuneCents(int VN) {
-    const float c2s = 0.01f;  // cents → semitones
-    int idx = 0;
-    if (VN & 1) detuneSemis_[idx++] = 0.0f;  // center voice for odd N
-    for (int k = 1; idx < VN; ++k) {
-      const float s = (cfg_.detuneCents * k) * c2s;
-      detuneSemis_[idx++] = +s;
-      if (idx < VN) detuneSemis_[idx++] = -s;
-    }
-    // for even N, we started at +s/-s (no center) — fine for symmetry
-  }
-
-  // equal-power pan positions across [-spread, +spread] with center priority
-  void seedPan(int VN) {
-    static const std::array<int, kMaxSwarmVoices> kRingOrder =
-        math::fillRingIdx<kMaxSwarmVoices>();
-
-    const int maxRing = (VN % 2) ? (VN - 1) / 2 : (VN / 2);
-    const float spread = cfg_.stereoSpread;
-    for (int i = 0; i < VN; ++i) {
-      const int ring = kRingOrder[i];
-      float p = 0.0f;
-      if (VN == 1)
-        p = 0.0f;
-      else {
-        // max ring index for this N
-        p = (maxRing ? float(ring) / float(maxRing) : 0.0f);
-      }
-      voices_.setPan(i, math::clamp(p * spread, -1.0f, 1.0f));
-    }
-  }
-
-  // center-weighted gains: w = base^(ring), normalized sum=1
-  void seedGains(int VN) {
-    float wSum = 0.0f;
+  void seedDetune(int VN) {
+    const float cents2semi = 0.01f;
     int idx = 0;
     if (VN & 1) {
-      gains_[idx++] = 1.0f;
-      wSum += 1.0f;
+      detuneMul_[idx++] = 1.f;
+    }  // center
+    for (int k = 1; idx < VN; ++k) {
+      const float semi = cfg_.detuneCents * k * cents2semi;
+      const float mul = exp2f(semi * (1.f / 12.f));
+      detuneMul_[idx++] = mul;
+      if (idx < VN) detuneMul_[idx++] = 1.f / mul;
+    }
+    for (int i = VN; i < N; ++i) detuneMul_[i] = 0.f;
+  }
+
+  static inline int ringIndexFor(int i, int VN) {
+    if (VN & 1) {
+      if (i == 0) return 0;
+      int k = (i + 1) / 2;
+      return (i & 1) ? +k : -k;
+    } else {
+      int k = (i / 2) + 1;
+      return (i & 1) ? -k : +k;
+    }
+  }
+
+  void seedPan(int VN) {
+    const int maxRing = (VN & 1) ? (VN - 1) / 2 : (VN / 2);
+    for (int i = 0; i < VN; ++i) {
+      const int ring = ringIndexFor(i, VN);
+      float pNorm = (VN == 1) ? 0.f : (maxRing ? float(ring) / maxRing : 0.f);
+      const float p = fminf(fmaxf(pNorm * cfg_.stereoSpread, -1.f), 1.f);
+      panL_[i] = panGainL(p);
+      panR_[i] = panGainR(p);
+    }
+    for (int i = VN; i < N; ++i) {
+      panL_[i] = panR_[i] = 0.f;
+    }
+  }
+
+  void seedGains(int VN) {
+    float sum = 0.f;
+    int idx = 0;
+    if (VN & 1) {
+      gains_[idx++] = 1.f;
+      sum += 1.f;
     }
     for (int k = 1; idx < VN; ++k) {
       const float w = powf(cfg_.gainBase, float(k));
       gains_[idx++] = w;
-      wSum += w;
-      if (idx >= VN) {
-        break;
+      sum += w;
+      if (idx < VN) {
+        gains_[idx++] = w;
+        sum += w;
       }
-      gains_[idx++] = w;
-      wSum += w;
     }
-    const float inv = (wSum > 0.0f) ? (1.0f / wSum) : 1.0f;
+    const float inv = (sum > 0.f) ? 1.f / sum : 1.f;
     const float norm = inv / sqrtf(float(VN));
     for (int i = 0; i < VN; ++i) gains_[i] *= norm;
+    for (int i = VN; i < N; ++i) gains_[i] = 0.f;
   }
+
+ private:
+  SwarmConfig<SR> cfg_;
+  zlkm::MorphOscN<N, SR> osc_;
+  std::array<float, N> tmp_{};
+  std::array<float, N> detuneMul_{};
+  std::array<float, N> gains_{};
+  std::array<float, N> panL_{}, panR_{};
 };

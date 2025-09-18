@@ -15,14 +15,13 @@ template <int SR, int OS>
 struct CalcisConfig {
   OscMode oscMode = OscMode::Swarm;
 
-  MorphConfigN<1, SR * OS> baseOsc;
   SwarmConfig<SR * OS> swarmOsc;
 
-  float pitchSemis = 24.0f;
-  float startMult = 4.0f;
+  float pitchSemis = 12.0f;
+  float startMult = 8.0f;
 
-  float ampMs = 220.0f;
-  float pitchMs = 30.0f;
+  float ampMs = 330.0f;
+  float pitchMs = 20.0f;
   float clickMs = 6.0f;
   float clickAmt = 0.2f;
   float outGain = 0.7f;
@@ -66,7 +65,6 @@ class CalcisHumilis {
   audio_tools::ADSR envFilter;  // unused here but kept
 
   // Oscillators run at OS*SR so their phase math sees true step size
-  MorphOscN<1, SR * OS> osc;
   SwarmMorph<10, SR * OS> swarm;
 
   SlewOnePoleN<1, SR> gainSlew_{};

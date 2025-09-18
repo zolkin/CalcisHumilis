@@ -168,6 +168,7 @@ void UI::initTabs_() {
 void UI::update() {
   // Tick all buttons
   trigBtn_.tick();
+
   for (int i = 0; i < kNumTabs; ++i) tabBtns_[i].tick();
 
   const uint32_t now = millis();

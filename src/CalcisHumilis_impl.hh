@@ -31,6 +31,8 @@ CalcisHumilis<SR, OS, NTAPS>::CalcisHumilis(const Cfg &cfg) : cfg_(cfg) {
 template <int SR, int OS, int NTAPS>
 void CalcisHumilis<SR, OS, NTAPS>::setConfig(const Cfg &cfg) {
   cfg_ = cfg;
+  swarm.setConfig(cfg_.swarmOsc);
+  applyEnvelopeRates();
 }
 
 template <int SR, int OS, int NTAPS>
@@ -53,19 +55,16 @@ void CalcisHumilis<SR, OS, NTAPS>::applyEnvelopeRates() {
 
 template <int SR, int OS, int NTAPS>
 void CalcisHumilis<SR, OS, NTAPS>::trigger() {
+  swarm.setConfig(cfg_.swarmOsc);
+
   applyEnvelopeRates();
   gainSlew_.setTimeMsAll(cfg_.gainSlewMs);
-
-  // These configs are at base SR; oscillators are templated at SR*OS
-  osc.setConfig(cfg_.baseOsc);
-  swarm.setConfig(cfg_.swarmOsc);
 
   envAmp.keyOn(1.0f);
   envPitch.keyOn(1.0f);
   envClick.keyOn(1.0f);
 
   triggerLED.FadeOff((uint32_t)cfg_.ampMs);
-  osc.reset(cfg_.pan);
   swarm.reset();
 
   if constexpr (OS > 1) osDecim_.reset();
@@ -100,14 +99,14 @@ void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
       const float c = envClick.tick();  // currently unused
 
       const float pitchSemis =
-          cfg_.pitchSemis + pitch::pitchToSemis(p * cfg_.startMult);
+          cfg_.pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_.startMult);
       float l = 0.f, r = 0.f;
       switch (cfg_.oscMode) {
         case OscMode::Swarm:
           swarm.tickStereo(pitchSemis, l, r);
           break;
         default:
-          osc.tickStereo(0, pitchSemis, l, r);
+          swarm.tickStereo(pitchSemis, l, r);
           break;
       }
       l = softClip(l * a * g);
@@ -129,14 +128,14 @@ void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
         const float c = envClick.tick();  // currently unused
 
         const float pitchSemis =
-            cfg_.pitchSemis + pitch::pitchToSemis(p * cfg_.startMult);
+            cfg_.pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_.startMult);
         // Generate at OS*SR
         switch (cfg_.oscMode) {
           case OscMode::Swarm:
             swarm.tickStereo(pitchSemis, l_os, r_os);
             break;
           default:
-            osc.tickStereo(0, pitchSemis, l_os, r_os);
+            swarm.tickStereo(pitchSemis, l_os, r_os);
             break;
         }
         // Apply amplitude & output gain at OS-rate (still ZOH controls)

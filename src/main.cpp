@@ -9,7 +9,7 @@ using namespace audio_tools;
 
 constexpr uint8_t PIN_BCLK = 10, PIN_LRCK = 11, PIN_DATA = 12;
 
-constexpr size_t BLOCK_FRAMES = 256;
+constexpr size_t BLOCK_FRAMES = 64;
 constexpr size_t BLOCK_BYTES = BLOCK_FRAMES * 2 * sizeof(int32_t);
 constexpr size_t FRAME_COUNT = 4;
 

@@ -80,21 +80,9 @@ struct UIConfig {
         {
             /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
             {0.f, 1.f, .001f, true, PotSpec::RsLin,
-             &pCfg->baseOsc.morph[0]}, /* morph */
-            {0.f, 1.f, .001f, false, PotSpec::RsLin,
-             &pCfg->baseOsc.pulseWidth[0]},                   /* PWM*/
-            {0.f, 1.f, .01f, false, PotSpec::RsExp, nullptr}, /* Disabled */
-            {0.f, 1.f, .01f, false, PotSpec::RsExp, nullptr}, /* Disabled */
-        }};
-
-    potTabs[TabSrc].pages[2] = ParameterPage{
-        true,
-        {
-            /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
-            {0.f, 1.f, .001f, true, PotSpec::RsLin,
-             &pCfg->swarmOsc.morph[0]}, /* morph */
-            {0.f, 1.f, .001f, false, PotSpec::RsLin,
-             &pCfg->swarmOsc.pulseWidth[0]}, /* PWM*/
+             &pCfg->swarmOsc.morph}, /* morph */
+            {0.02f, 0.98f, .001f, false, PotSpec::RsLin,
+             &pCfg->swarmOsc.pulseWidth}, /* PWM*/
             {0.f, 1200.f, .1f, false, PotSpec::RsExp,
              &pCfg->swarmOsc.detuneCents}, /* Disabled */
             {0.f, 1.f, .01f, false, PotSpec::RsExp,
