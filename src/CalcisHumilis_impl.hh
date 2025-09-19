@@ -3,77 +3,58 @@
 
 #include "CalcisHumilis.h"
 
-using namespace audio_tools;
+namespace zlkm {
 
-template <int SR, int OS, int NTAPS>
-float CalcisHumilis<SR, OS, NTAPS>::rateFromMs(float ms, int sr) {
+template <class TR>
+float CalcisHumilis<TR>::rateFromMs(float ms, int sr) {
   float samples = ms * (float)sr * 0.001f;
   if (samples < 1.0f) samples = 1.0f;
   return 1.0f / samples;  // per-sample step
 }
 
-template <int SR, int OS, int NTAPS>
-float CalcisHumilis<SR, OS, NTAPS>::softClip(float x) {
+template <class TR>
+float CalcisHumilis<TR>::softClip(float x) {
   const float t = 0.95f;
   const bool isClip = (x > t) || (x < -t);
-  if (isClip) clippingLED.FadeOff(30);
+  if (isClip) ++fb_->saturationCounter;
   if (x > t) return t + (x - t) * 0.05f;
   if (x < -t) return -t + (x + t) * 0.05f;
   return x;
 }
 
-template <int SR, int OS, int NTAPS>
-CalcisHumilis<SR, OS, NTAPS>::CalcisHumilis(const Cfg &cfg) : cfg_(cfg) {
-  setConfig(cfg_);
+template <class TR>
+CalcisHumilis<TR>::CalcisHumilis(const Cfg *cfg, Feedback *fb)
+    : cfg_(cfg), fb_(fb) {
   if constexpr (OS > 1) osDecim_.setup();
 }
 
-template <int SR, int OS, int NTAPS>
-void CalcisHumilis<SR, OS, NTAPS>::setConfig(const Cfg &cfg) {
-  cfg_ = cfg;
-  swarm.setConfig(cfg_.swarmOsc);
-  applyEnvelopeRates();
-}
-
-template <int SR, int OS, int NTAPS>
-void CalcisHumilis<SR, OS, NTAPS>::applyEnvelopeRates() {
-  envAmp.setAttackRate(rateFromMs(cfg_.ampAttackMs, SR * OS));
-  envAmp.setDecayRate(rateFromMs(cfg_.ampMs, SR * OS));
+template <class TR>
+void CalcisHumilis<TR>::applyEnvelopeRates() {
+  envAmp.setAttackRate(rateFromMs(cfg_->ampAttackMs, SR * OS));
+  envAmp.setDecayRate(rateFromMs(cfg_->ampMs, SR * OS));
   envAmp.setSustainLevel(0.0f);
   envAmp.setReleaseRate(0.0f);
 
-  envPitch.setAttackRate(rateFromMs(cfg_.pitchAttackMs, SR * OS));
-  envPitch.setDecayRate(rateFromMs(cfg_.pitchMs, SR * OS));
+  envPitch.setAttackRate(rateFromMs(cfg_->pitchAttackMs, SR * OS));
+  envPitch.setDecayRate(rateFromMs(cfg_->pitchMs, SR * OS));
   envPitch.setSustainLevel(0.0f);
   envPitch.setReleaseRate(0.0f);
 
-  envClick.setAttackRate(rateFromMs(cfg_.clickAttackMs, SR * OS));
-  envClick.setDecayRate(rateFromMs(cfg_.clickMs, SR * OS));
+  envClick.setAttackRate(rateFromMs(cfg_->clickAttackMs, SR * OS));
+  envClick.setDecayRate(rateFromMs(cfg_->clickMs, SR * OS));
   envClick.setSustainLevel(0.0f);
   envClick.setReleaseRate(0.0f);
 }
 
-template <int SR, int OS, int NTAPS>
-void CalcisHumilis<SR, OS, NTAPS>::trigger() {
-  swarm.setConfig(cfg_.swarmOsc);
-
-  applyEnvelopeRates();
-  gainSlew_.setTimeMsAll(cfg_.gainSlewMs);
-
+template <class TR>
+void CalcisHumilis<TR>::trigger() {
+  gainSlew_.setTimeMsAll(cfg_->gainSlewMs);
   envAmp.keyOn(1.0f);
   envPitch.keyOn(1.0f);
   envClick.keyOn(1.0f);
-
-  triggerLED.FadeOff((uint32_t)cfg_.ampMs);
   swarm.reset();
 
   if constexpr (OS > 1) osDecim_.reset();
-}
-
-template <int SR, int OS, int NTAPS>
-void CalcisHumilis<SR, OS, NTAPS>::tickLED() {
-  triggerLED.Update();
-  clippingLED.Update();
 }
 
 static inline float clamp01(float x) {
@@ -82,9 +63,16 @@ static inline float clamp01(float x) {
   return x;
 }
 
-template <int SR, int OS, int NTAPS>
-void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
-  gainSlew_.setTarget(0, cfg_.outGain);
+template <class TR>
+void CalcisHumilis<TR>::fillBlock(int32_t *dstLR, size_t nFrames) {
+  if (cfg_->trigCounter > trigCounter_) {
+    trigCounter_ = cfg_->trigCounter;
+    trigger();
+  }
+
+  gainSlew_.setTarget(0, cfg_->outGain);
+  swarm.setConfig(cfg_->swarmOsc);
+  applyEnvelopeRates();
 
   for (size_t i = 0; i < nFrames; ++i) {
     // Controls advance at base rate (one step per output frame)
@@ -99,9 +87,9 @@ void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
       const float c = envClick.tick();  // currently unused
 
       const float pitchSemis =
-          cfg_.pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_.startMult);
+          cfg_->pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_->startMult);
       float l = 0.f, r = 0.f;
-      switch (cfg_.oscMode) {
+      switch (cfg_->oscMode) {
         case OscMode::Swarm:
           swarm.tickStereo(pitchSemis, l, r);
           break;
@@ -128,9 +116,9 @@ void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
         const float c = envClick.tick();  // currently unused
 
         const float pitchSemis =
-            cfg_.pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_.startMult);
+            cfg_->pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_->startMult);
         // Generate at OS*SR
-        switch (cfg_.oscMode) {
+        switch (cfg_->oscMode) {
           case OscMode::Swarm:
             swarm.tickStereo(pitchSemis, l_os, r_os);
             break;
@@ -158,7 +146,7 @@ void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
       outR = softClip(outR);
     }
 
-    if (cfg_.kPack24In32) {
+    if (cfg_->kPack24In32) {
       dstLR[2 * i + 0] = (int32_t)lrintf(outL * 8388607.0f) << 8;
       dstLR[2 * i + 1] = (int32_t)lrintf(outR * 8388607.0f) << 8;
     } else {
@@ -167,3 +155,5 @@ void CalcisHumilis<SR, OS, NTAPS>::fillBlock(int32_t *dstLR, size_t nFrames) {
     }
   }
 }
+
+}  // namespace zlkm

@@ -5,9 +5,11 @@
 
 #include "BaseOsc.h"  // zlkm::MorphOscN<N,SR>
 
+namespace zlkm {
+
 template <int SR>
 struct SwarmConfig {
-  int voices = 4;             // 1..N
+  int voices = 3;             // 1..N
   float baseTuneHz = 65.0f;   // base tuning in Hz
   float detuneCents = 3.0f;   // spread per ring (±c, ±2c, …)
   float stereoSpread = 0.6f;  // 0..1 width
@@ -53,7 +55,6 @@ class SwarmMorph {
     for (int i = 0; i < VN; ++i) {
       osc_.freqNowHz[i] = f0 * detuneMul_[i];
     }
-    // for (int i = VN; i < N; ++i) osc_.freqNowHz[i] = 0.f;
 
     osc_.tickFirst(cfg_.voices, tmp_);
 
@@ -139,8 +140,11 @@ class SwarmMorph {
  private:
   SwarmConfig<SR> cfg_;
   zlkm::MorphOscN<N, SR> osc_;
+
   std::array<float, N> tmp_{};
   std::array<float, N> detuneMul_{};
   std::array<float, N> gains_{};
   std::array<float, N> panL_{}, panR_{};
 };
+
+}  // namespace zlkm

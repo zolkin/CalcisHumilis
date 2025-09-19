@@ -1,16 +1,20 @@
 #pragma once
+
 #include <AnalogInput.h>
 #include <Arduino.h>
+#include <JLED.h>
 #include <OneButton.h>
 
 #include <array>
 
+#include "AudioTraits.h"
 #include "CalcisHumilis.h"
 
 // Identify each pot (extend as you add more)
+namespace zlkm {
 
-static constexpr int CALCIS_SR = 48000;
-using Calcis = CalcisHumilis<CALCIS_SR, 1, 1>;
+using CalcisTR = AudioTraits<48000, 1, 32, 64>;
+using Calcis = CalcisHumilis<CalcisTR>;
 
 struct PotSource {
   enum PotId { A = 0, B, C, D, Count };
@@ -60,70 +64,71 @@ struct ParameterTab {
   ParameterPage pages[MAX_PAGE];
 };
 
-// Overall UI config (no code duplication)
-struct UIConfig {
-  enum Tabs { TabSrc = 0, TabCount };
-  UIConfig(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
-    potTabs[TabSrc].enabled = true;
-    potTabs[TabSrc].pages[0] = ParameterPage{
-        true,
-        {
-            /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
-            {20.f, 2000.f, .1f, true, PotSpec::RsLin, &pCfg->ampMs},  /* Dec */
-            {2.f, 800.f, .1f, false, PotSpec::RsLin, &pCfg->pitchMs}, /* PDec*/
-            {-1.f, 1.f, .001f, false, PotSpec::RsLin, &pCfg->pan},    /* Pan */
-            {0.f, 1.f, .01f, false, PotSpec::RsExp, &pCfg->outGain},  /* Gain*/
-        }};
-
-    potTabs[TabSrc].pages[1] = ParameterPage{
-        true,
-        {
-            /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
-            {0.f, 1.f, .001f, true, PotSpec::RsLin,
-             &pCfg->swarmOsc.morph}, /* morph */
-            {0.02f, 0.98f, .001f, false, PotSpec::RsLin,
-             &pCfg->swarmOsc.pulseWidth}, /* PWM*/
-            {0.f, 1200.f, .1f, false, PotSpec::RsExp,
-             &pCfg->swarmOsc.detuneCents}, /* Disabled */
-            {0.f, 1.f, .01f, false, PotSpec::RsExp,
-             &pCfg->swarmOsc.stereoSpread}, /* Disabled */
-        }};
-  }
-
-  // Trigger button (unchanged)
-  uint8_t trigPin = 6;
-
-  // NEW: Tab buttons and LEDs
-  static constexpr int kNumTabs = 4;
-
-  uint8_t tabBtnPins[kNumTabs] = {14, 15, 16, 17};  // GP14..GP17
-  uint8_t tabLedPins[kNumTabs] = {18, 19, 20, 21};  // GP18..GP21
-
-  // NEW: per-tab page counts (can change later)
-  uint8_t tabPageCount[kNumTabs] = {3, 1, 1, 1};  // Tab 0 = 1 page for now
-
-  // Scanning/timing
-  uint16_t pollMs = 5;           // ~200 Hz
-  float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing
-  float activityThresh = 1.0f;   // counts (default in RAR ≈ 4)
-
-  Calcis::Cfg* pCfg;
-
-  PotSource potSources[PotSource::Count] = {
-      /* ADS ,CH,PIN, INV*/
-      {true, 0, 0, false},
-      {false, 0, A2, false},
-      {false, 0, A1, false},
-      {false, 0, A0, false},
-  };
-
-  // Pots
-  ParameterTab potTabs[kNumTabs];
-};
-
 class UI {
  public:
-  explicit UI(UIConfig* cfg, Calcis* kick);
+  struct Cfg {
+    enum Tabs { TabSrc = 0, TabCount };
+    Cfg(const Cfg&) = delete;
+    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
+      potTabs[TabSrc].enabled = true;
+      potTabs[TabSrc].pages[0] = ParameterPage{
+          true,
+          {
+              /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
+              {-1.f, 1.f, .001f, false, PotSpec::RsLin, &pCfg->pan},   /* Pan */
+              {20.f, 2000.f, .1f, true, PotSpec::RsLin, &pCfg->ampMs}, /* Dec */
+              {2.f, 800.f, .1f, false, PotSpec::RsLin,
+               &pCfg->pitchMs},                                        /* PDec*/
+              {0.f, 1.f, .01f, false, PotSpec::RsExp, &pCfg->outGain}, /* Gain*/
+          }};
+
+      potTabs[TabSrc].pages[1] = ParameterPage{
+          true,
+          {
+              /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
+              {0.01f, 0.99f, .001f, false, PotSpec::RsLin,
+               &pCfg->swarmOsc.pulseWidth}, /* PWM*/
+              {0.f, 1.f, .001f, true, PotSpec::RsLin,
+               &pCfg->swarmOsc.morph}, /* morph */
+              {0.f, 1200.f, .1f, false, PotSpec::RsExp,
+               &pCfg->swarmOsc.detuneCents}, /* Detune */
+              {0.f, 1.f, .01f, false, PotSpec::RsExp,
+               &pCfg->swarmOsc.stereoSpread}, /* Spread */
+          }};
+    }
+
+    // Trigger button (unchanged)
+    uint8_t trigPin = 6;
+
+    // NEW: Tab buttons and LEDs
+    static constexpr int kNumTabs = 4;
+
+    uint8_t tabBtnPins[kNumTabs] = {14, 15, 16, 17};  // GP14..GP17
+    uint8_t tabLedPins[kNumTabs] = {18, 19, 20, 21};  // GP18..GP21
+
+    // NEW: per-tab page counts (can change later)
+    uint8_t tabPageCount[kNumTabs] = {3, 1, 1, 1};  // Tab 0 = 1 page for now
+
+    // Scanning/timing
+    uint16_t pollMs = 5;           // ~200 Hz
+    float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing
+    float activityThresh = 1.0f;   // counts (default in RAR ≈ 4)
+
+    Calcis::Cfg* pCfg;
+
+    PotSource potSources[PotSource::Count] = {
+        /* ADS ,CH,PIN, INV*/
+        {true, 1, 0, false},
+        {false, 0, A2, false},
+        {false, 0, A1, false},
+        {false, 0, A0, false},
+    };
+
+    // Pots
+    ParameterTab potTabs[kNumTabs];
+  };
+
+  explicit UI(Calcis::Cfg* cfg, Calcis::Feedback* fb);
 
   void update();  // call each loop()
   static void waitForSerial(unsigned long timeoutMs = 3000);
@@ -131,12 +136,13 @@ class UI {
   void attachADS();
 
  private:
-  UIConfig* ucfg_;
-  Calcis* kick_ = nullptr;
+  Cfg ucfg_;
+  Calcis::Feedback* fb_;
+  int saturationCounter_ = 0;
 
   // Buttons
   OneButton trigBtn_;
-  static constexpr int kNumTabs = UIConfig::kNumTabs;
+  static constexpr int kNumTabs = Cfg::kNumTabs;
   std::array<OneButton, kNumTabs> tabBtns_;  // NEW: OneButton for tabs
 
   // Context passed to OneButton callbacks (so we know which tab fired)
@@ -158,6 +164,12 @@ class UI {
   Adafruit_ADS1015 ads_;
   float adsVref_ = 3.3f;  // your pot runs off 3V3
 
+  // LEDs
+  JLed triggerLED{2};
+  JLed clippingLED{3};
+
+  void tickLED();
+
   // Setup helpers
   void initAdc_();
   void initPots_(bool adsOk);
@@ -168,7 +180,7 @@ class UI {
   static void onTabPress_(void* param);  // NEW: tab press (select/advance)
 
   const PotSpec& getPotSpec(int index) const {
-    return ucfg_->potTabs[currentTab_]
+    return ucfg_.potTabs[currentTab_]
         .pages[currentPage_[currentTab_]]
         .pots[index];
   }
@@ -189,3 +201,7 @@ class UI {
   void updateLeds_();
   void blinkLed_(uint8_t tab, uint8_t count);
 };
+
+}  // namespace zlkm
+
+#include "UI_impl.hh"

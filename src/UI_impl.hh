@@ -1,32 +1,45 @@
-#include "UI.h"
-
 #include <ArduinoLog.h>
 #include <math.h>
+
+#include "UI.h"
+
+namespace zlkm {
 
 static constexpr int kAdcMaxCode = 4095;  // RP2040 12-bit
 
 // ---------- ctor ----------
-UI::UI(UIConfig* cfg, Calcis* kick)
+UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
     : ucfg_(cfg),
-      trigBtn_(cfg->trigPin, /*activeLow=*/true, /*pullupActive=*/true),
-      kick_(kick) {
+      fb_(fb),
+      trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true) {
+  attachADS();
   initAdc_();
   initTabs_();  // NEW
 
   trigBtn_.attachPress(UI::onPress_, this);
-  trigBtn_.setDebounceMs(3);
+  trigBtn_.setDebounceMs(5);
+
+  Log.notice(F("[UI] ready" CR));
+}
+
+void UI::tickLED() {
+  if (saturationCounter_ < fb_->saturationCounter) {
+    clippingLED.FadeOff(80);
+  }
+  triggerLED.Update();
+  clippingLED.Update();
 }
 
 // ---------- ADS attach ----------
 void UI::attachADS() {
-  Wire.setSDA(4);  // GP4
-  Wire.setSCL(5);  // GP5
+  Wire.setSDA(8);  // GP4
+  Wire.setSCL(9);  // GP5
   Wire.begin();
   Wire.setClock(400000);
 
   bool needAds = false;
   bool adsOk_ = false;
-  for (const auto& ps : ucfg_->potSources)
+  for (const auto& ps : ucfg_.potSources)
     if (ps.useAds) {
       needAds = true;
       break;
@@ -70,14 +83,14 @@ void UI::initPots_(bool adsOk) {
   // Build unified pot readers
   int pot_idx = 0;
   for (int i = 0; i < PotSource::Count; ++i) {
-    const auto& ps = ucfg_->potSources[i];
+    const auto& ps = ucfg_.potSources[i];
     if (ps.useAds && adsOk) {
       pots_[i].attachADS(&ads_, ps.adsChannel, 3.3f);
       pots_[i].setADSParams(kAdcMaxCode, /*emaAlpha=*/0.12f);
     } else {
       pots_[i].attachInternal(ps.pin, /*sleep=*/true);
-      pots_[i].setRARParams(kAdcMaxCode, ucfg_->snapMultiplier,
-                            ucfg_->activityThresh, /*edgeSnap=*/true);
+      pots_[i].setRARParams(kAdcMaxCode, ucfg_.snapMultiplier,
+                            ucfg_.activityThresh, /*edgeSnap=*/true);
     }
   }
 }
@@ -114,7 +127,7 @@ inline float UI::mapExp_(int raw, int rawMax, float outMin, float outMax,
 // ---------- process one pot ----------
 bool UI::processPot_(int id) {
   const PotSpec& spec = getPotSpec(id);
-  const PotSource& source = ucfg_->potSources[id];
+  const PotSource& source = ucfg_.potSources[id];
 
   if (!pots_[id].update()) return false;
   int raw = pots_[id].value();  // 0..4095
@@ -145,13 +158,13 @@ bool UI::processPot_(int id) {
 void UI::initTabs_() {
   // LEDs
   for (int i = 0; i < kNumTabs; ++i) {
-    pinMode(ucfg_->tabLedPins[i], OUTPUT);
-    digitalWrite(ucfg_->tabLedPins[i], LOW);
+    pinMode(ucfg_.tabLedPins[i], OUTPUT);
+    digitalWrite(ucfg_.tabLedPins[i], LOW);
   }
 
   // OneButton for each tab button (INPUT_PULLUP, activeLow=true)
   for (int i = 0; i < kNumTabs; ++i) {
-    tabBtns_[i] = OneButton(ucfg_->tabBtnPins[i], /*activeLow=*/false,
+    tabBtns_[i] = OneButton(ucfg_.tabBtnPins[i], /*activeLow=*/false,
                             /*pullupActive=*/false);
     tabBtns_[i].setDebounceMs(3);
     tabCtx_[i] = TabCtx{this, static_cast<uint8_t>(i)};
@@ -172,27 +185,26 @@ void UI::update() {
   for (int i = 0; i < kNumTabs; ++i) tabBtns_[i].tick();
 
   const uint32_t now = millis();
-  if (now - tPrev_ < ucfg_->pollMs) return;
+  if (now - tPrev_ < ucfg_.pollMs) return;
   tPrev_ = now;
 
   bool changed = false;
 
   // Only enabled tabs processes pots (unchanged behavior)
-  if (ucfg_->potTabs[currentTab_].enabled) {
+  if (ucfg_.potTabs[currentTab_].enabled) {
     for (int i = 0; i < PotSource::Count; ++i) {
       changed |= processPot_(i);
     }
   }
 
-  if (changed && kick_) {
-    kick_->setConfig(*ucfg_->pCfg);
-  }
+  tickLED();
 }
 
 // ---------- trigger press (unchanged) ----------
 void UI::onPress_(void* param) {
   UI* self = reinterpret_cast<UI*>(param);
-  if (self->kick_) self->kick_->trigger();
+  ++(self->ucfg_.pCfg->trigCounter);
+  self->triggerLED.FadeOff(self->ucfg_.pCfg->ampMs);
 }
 
 // ---------- tab press (select or advance) ----------
@@ -213,14 +225,14 @@ void UI::selectTab_(uint8_t tab) {
   if (tab >= kNumTabs) return;
   currentTab_ =
       tab;  // (typo: remove 'self->' if pasting—should be just currentTab_)
-  uint8_t pc = ucfg_->tabPageCount[currentTab_];
+  uint8_t pc = ucfg_.tabPageCount[currentTab_];
   if (pc == 0) pc = 1;
   if (currentPage_[currentTab_] >= pc) currentPage_[currentTab_] = 0;
   updateLeds_();
 }
 
 void UI::advancePage_() {
-  uint8_t pc = ucfg_->tabPageCount[currentTab_];
+  uint8_t pc = ucfg_.tabPageCount[currentTab_];
   if (pc <= 1) {
     blinkLed_(currentTab_, 1);
     return;
@@ -232,12 +244,12 @@ void UI::advancePage_() {
 
 void UI::updateLeds_() {
   for (uint8_t i = 0; i < kNumTabs; ++i) {
-    digitalWrite(ucfg_->tabLedPins[i], (i == currentTab_) ? HIGH : LOW);
+    digitalWrite(ucfg_.tabLedPins[i], (i == currentTab_) ? HIGH : LOW);
   }
 }
 
 void UI::blinkLed_(uint8_t tab, uint8_t count) {
-  const uint8_t pin = ucfg_->tabLedPins[tab];
+  const uint8_t pin = ucfg_.tabLedPins[tab];
   digitalWrite(pin, LOW);
   delay(40);
   for (uint8_t n = 0; n < count; ++n) {
@@ -248,3 +260,5 @@ void UI::blinkLed_(uint8_t tab, uint8_t count) {
   }
   if (tab == currentTab_) digitalWrite(pin, HIGH);
 }
+
+}  // namespace zlkm
