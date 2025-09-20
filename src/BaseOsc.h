@@ -10,32 +10,38 @@ namespace zlkm {
 
 template <int N, int SR>
 class BaseOscillatorN {
-  static constexpr float FREQ_TO_PHASE = TWO_PI / SR;
+  // per-sample normalized increment: dt = f / SR
+  static constexpr float FREQ_TO_T = 1.0f / SR;
 
  public:
   // Call on trigger/note-on; latches pan & resets phase
   void reset(const bool randomPhase = false) {
     for (int i = 0; i < N; ++i) {
-      phase[i] = randomPhase ? math::rand01() * TWO_PI_F : 0.0f;
-      phaseInc[i] = 0.0f;
+      phase[i] = randomPhase ? math::rand01() : 0.0f;  // store t in [0,1)
+      phaseInc[i] = 0.0f;                              // dt
     }
   }
 
-  std::array<float, N> freqNowHz = {0.0f};
-  std::array<float, N> phase = {0.0f};
-  std::array<float, N> phaseInc = {0.0f};
+  std::array<float, N> cyclesPerSample = {0.0f};
+  std::array<float, N> phase = {0.0f};     // now t in [0,1)
+  std::array<float, N> phaseInc = {0.0f};  // now dt in [0,1)
 
  protected:
-  inline void smoothPhaseIncTowards(const float targetInc) {
+  inline void smoothPhaseIncTowards(const float /*targetInc*/) {
     // set smoothingAlpha_ to 1.0f if you want immediate tracking
   }
 
   inline void advancePhase() {
     for (int i = 0; i < N; ++i) {
-      phaseInc[i] +=
-          (freqNowHz[i] * FREQ_TO_PHASE - phaseInc[i]) * SMOOTHING_FACTOR;
+      // track dt towards target f/SR (keep your SMOOTHING_FACTOR as-is)
+      phaseInc[i] += (cyclesPerSample[i] - phaseInc[i]) * SMOOTHING_FACTOR;
+
+      // advance normalized phase and wrap with a cheap branch
       phase[i] += phaseInc[i];
-      phase[i] = fmodf(phase[i], TWO_PI_F);
+      if (phase[i] >= 1.0f)
+        phase[i] -= 1.0f;  // dt < 1, so one subtract is enough
+      if (phase[i] < 0.0f)
+        phase[i] += 1.0f;  // (defensive, in case dt ever goes negative)
     }
   }
 };
@@ -48,8 +54,8 @@ class SimpleOscN : public BaseOscillatorN<N, SR> {
   inline void tick(std::array<float, N>& out) {
     this->advancePhase();
     for (int i = 0; i < N; ++i) {
-      out[i] = static_cast<IMPL* const>(this)->sample(this->phase[i],
-                                                      this->phaseInc[i]);
+      out[i] = static_cast<IMPL* const>(this)->sample(this->phase[i],      // t
+                                                      this->phaseInc[i]);  // dt
     }
   }
 };
@@ -57,58 +63,70 @@ class SimpleOscN : public BaseOscillatorN<N, SR> {
 // -------- SINE --------
 template <int N, int SR>
 class SineOscN : public SimpleOscN<N, SR, SineOscN> {
+  static constexpr int kSineLUTBits = 9;
+  static constexpr int kLUTSize = 1 << kSineLUTBits;  // power of two
+  static constexpr float fLUTSize = float(kLUTSize);
+  static constexpr int kLUTMask = kLUTSize - 1;
+
+  static inline std::array<float, kLUTSize> calcTable() {
+    std::array<float, kLUTSize> res;
+    for (int i = 0; i < kLUTSize; ++i) {
+      const float ang = TWO_PI * (float(i) / fLUTSize);
+      res[i] = sinf(ang);
+    }
+    return res;
+  }
+
+  static inline std::array<float, kLUTSize> fLUTSine = calcTable();
+
  public:
-  static float sample(float ph, float _ = 0) { return sinf(ph); }
+  static float sample(float t, float /*dt*/ = 0.0f) {
+    // t in [0,1). Use power-of-two LUT with wrap via mask.
+    const float fpos = t * fLUTSize;
+    const int i0 = int(fpos) & kLUTMask;
+    const int i1 = (i0 + 1) & kLUTMask;
+    const float a = fpos - float(int(fpos));
+    return math::interpolate(fLUTSine[i0], fLUTSine[i1], a);
+  }
 };
 
 // -------- TRIANGLE (naive, light CPU) --------
-// tri = 1 - 2*abs(saw), where saw = (ph/PI) - 1  in [-1, +1]
+// tri = 1 - 2*abs(saw), where saw = 2*t - 1  in [-1, +1]
 template <int N, int SR>
 class TriOscN : public SimpleOscN<N, SR, TriOscN> {
  public:
-  static float sample(float ph, float _ = 0) {
-    float saw = (ph / PI) - 1.0f;     // [-1..+1] with discontinuity at wrap
-    return 1.0f - 2.0f * fabsf(saw);  // [-1..+1], peak at center
+  static float sample(float t, float /*dt*/ = 0.0f) {
+    const float saw = 2.0f * t - 1.0f;  // [-1..+1] with discontinuity at wrap
+    return 1.0f - 2.0f * fabsf(saw);    // [-1..+1], peak at center
   }
 };
 
 // -------- SAWTOOTH (polyblep) --------
-// saw = (ph/PI) - 1  in [-1, +1]
+// saw = 2*t - 1  in [-1, +1]
 template <int N, int SR>
 class SawOscN : public SimpleOscN<N, SR, SawOscN> {
  public:
-  static float sample(float ph, float pi) {
-    float t = ph * (1.0f / TWO_PI);
-    t -= floorf(t);
-    float dt = pi * (1.0f / TWO_PI);
-    return (ph / PI) - 1.0f - dsp::polyblep(t, dt);
+  static float sample(const float t, const float dt) {
+    return (2.0f * t - 1.0f) - dsp::polyblep(t, dt);
   }
 };
 
-// -------- SQUARE (50% duty, polyblep) --------
+// -------- SQUARE (variable PW, polyblep) --------
 template <int N, int SR>
 class SquareOscN : public BaseOscillatorN<N, SR> {
  public:
-  std::array<float, N> pulseWidth = {0.5f};
+  std::array<float, N> pulseWidth = {0.5f};  // assumed clamped upstream
 
-  static float sample(const float ph, const float phInc,
-                      const float pw = 0.5f) {
-    // normalize
-    float t = ph * (1.0f / TWO_PI);
-    float dt = phInc * (1.0f / TWO_PI);
+  static float sample(const float t, const float dt, const float pw = 0.5f) {
+    float s = (t < pw) ? 1.0f : -1.0f;
 
-    // base hard square
-    float s = (t < pw) ? +1.0f : -1.0f;
+    // rising edge at t = pw (wrap without floorf)
+    float tr = t - pw;          // in (-pw, 1-pw)
+    if (tr < 0.0f) tr += 1.0f;  // wrap to [0,1)
 
-    // rising edge at t = pw
-    float tr = t - pw;
-    tr -= floorf(tr);  // wrap to [0,1)
-    s += dsp::polyblep(tr, dt);
-
-    // falling edge at t = 0 (a.k.a. 1)
-    float tf = t;  // edge at 0
-    s -= dsp::polyblep(tf, dt);
-
+    // polyBLEP corrections (t,dt are already normalized)
+    s += dsp::polyblep(tr, dt);  // cancel discontinuity at +edge
+    s -= dsp::polyblep(t, dt);   // cancel discontinuity at 0/1
     return s;
   }
 
@@ -129,24 +147,24 @@ class MorphOscN : public SquareOscN<N, SR> {
   static constexpr float SINE_BOUND = 0.0f;
   static constexpr float TRIANGLE_BOUND = 1.0f / 3.0f;
   static constexpr float SQUARE_BOUND = 2.0f / 3.0f;
-  static constexpr float SAW_BOUND = 1.0;
+  static constexpr float SAW_BOUND = 1.0f;
   static constexpr float WAVES_COUNT = 3.0f;
 
-  inline float sample(float ph, float pi, float pw, float m) {
+  inline float sample(float t, float dt, float pw, float m) {
     using namespace math;
     if (m <= TRIANGLE_BOUND) {
-      const float t = (m - SINE_BOUND) * WAVES_COUNT;  // 0..1
-      return interpolate(SineOscN<N, SR>::sample(ph),
-                         TriOscN<N, SR>::sample(ph), t);
+      const float a = (m - SINE_BOUND) * WAVES_COUNT;  // 0..1
+      return interpolate(SineOscN<N, SR>::sample(t), TriOscN<N, SR>::sample(t),
+                         a);
     }
     if (m <= SQUARE_BOUND) {
-      const float t = (m - TRIANGLE_BOUND) * WAVES_COUNT;  // 0..1
-      return interpolate(TriOscN<N, SR>::sample(ph),
-                         SquareOscN<N, SR>::sample(ph, pi, pw), t);
+      const float a = (m - TRIANGLE_BOUND) * WAVES_COUNT;  // 0..1
+      return interpolate(TriOscN<N, SR>::sample(t),
+                         SquareOscN<N, SR>::sample(t, dt, pw), a);
     }
-    const float t = (m - SQUARE_BOUND) * WAVES_COUNT;  // 0..1
-    return interpolate(SquareOscN<N, SR>::sample(ph, pi, pw),
-                       SawOscN<N, SR>::sample(ph, pi), t);
+    const float a = (m - SQUARE_BOUND) * WAVES_COUNT;  // 0..1
+    return interpolate(SquareOscN<N, SR>::sample(t, dt, pw),
+                       SawOscN<N, SR>::sample(t, dt), a);
   }
 
   inline void tickAll(std::array<float, N>& out) {

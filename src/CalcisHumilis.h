@@ -8,6 +8,7 @@
 #include <Stream.h>
 
 #include "BaseOsc.h"
+#include "DJFilter.h"
 #include "FirOversample.h"  // the helper above
 #include "Slew.h"
 #include "Swarm.h"
@@ -22,8 +23,16 @@ class CalcisHumilis {
 
   static constexpr int SR = TR::SR;
   static constexpr int OS = TR::OS;
+  static constexpr int MAX_SWARM_VOICES = 16;
+
+  static constexpr float INV_SR = 1.f / float(SR);
+
+  static constexpr float SLEW_MS_ALL = 3.f;
 
  public:
+  static constexpr float rate(float ms) { return dsp::msToRate(ms, SR); }
+  static constexpr float cycles(float hz) { return hz * INV_SR; }
+
   enum class OscMode : uint8_t { Basic = 0, Swarm };
 
   struct Cfg {
@@ -31,20 +40,34 @@ class CalcisHumilis {
 
     SwarmConfig<SR * OS> swarmOsc;
 
-    float pitchSemis = 12.0f;
-    float startMult = 8.0f;
+    float cyclesPerSample = cycles(65.f);
+    float pitchDepthMult = 8.0f;
 
-    float ampMs = 330.0f;
-    float pitchMs = 20.0f;
-    float clickMs = 6.0f;
-    float clickAmt = 0.2f;
-    float outGain = 0.7f;
-    float gainSlewMs = 3.0f;
+    float ampAtt = rate(1.f);
+    float ampDec = rate(330.f);
+
+    float pitchAtt = rate(10.f);
+    float pitchDec = rate(20.0f);
+
+    float clickAtt = rate(1.f);
+    float clickDec = rate(6.f);
+    float clickAmt = .2f;
+
+    float outGain = .7f;
+    float gainSlew = 3.0f;
     float pan = 0.f;
 
-    float ampAttackMs = 0.001f;
-    float pitchAttackMs = 0.01f;
-    float clickAttackMs = 0.001f;
+    float swarmAtt = rate(200.f);
+    float swarmDec = rate(500.f);
+
+    float morphAtt = rate(10.f);
+    float morphDec = rate(200.f);
+    float morphAmt = .8f;
+
+    float filterGCut = dsp::hzToGCut<SR>(2000.f);
+    float filterKDamp = dsp::res01ToKDamp(0.f);
+    float filterMorph = 0.f;
+    float filterDrive = 0.f;
 
     int trigCounter = 0;
 
@@ -64,7 +87,6 @@ class CalcisHumilis {
   void fillBlock(int32_t *dstLR, size_t nFrames);
 
  private:
-  static float rateFromMs(float ms, int sr);
   float softClip(float x);
   void applyEnvelopeRates();
 
@@ -77,11 +99,15 @@ class CalcisHumilis {
   audio_tools::ADSR envAmp, envPitch, envClick;
   audio_tools::ADSR envFilter;  // unused here but kept
 
+  audio_tools::ADSR envSwarm, envMorph;
+
   // Oscillators run at OS*SR so their phase math sees true step size
-  SwarmMorph<10, SR * OS> swarm;
+  SwarmMorph<MAX_SWARM_VOICES, SR * OS> swarm;
 
   SlewOnePoleN<1, SR> gainSlew_{};
   float currentPan = 0.5f;
+
+  DJFilterTPT<SR * OS> filterL, filterR;
 
   // FIR at OS*SR, then decimate by OS
   OversampleDecimator<OS, NTAPS> osDecim_;

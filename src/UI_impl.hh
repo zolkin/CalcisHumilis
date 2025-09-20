@@ -12,12 +12,13 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
     : ucfg_(cfg),
       fb_(fb),
       trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true) {
-  attachADS();
   initAdc_();
   initTabs_();  // NEW
 
   trigBtn_.attachPress(UI::onPress_, this);
   trigBtn_.setDebounceMs(5);
+
+  attachADS();
 
   Log.notice(F("[UI] ready" CR));
 }
@@ -32,8 +33,8 @@ void UI::tickLED() {
 
 // ---------- ADS attach ----------
 void UI::attachADS() {
-  Wire.setSDA(8);  // GP4
-  Wire.setSCL(9);  // GP5
+  Wire.setSDA(0);  // GP4
+  Wire.setSCL(1);  // GP5
   Wire.begin();
   Wire.setClock(400000);
 
@@ -98,8 +99,7 @@ void UI::initPots_(bool adsOk) {
 // ---------- map helpers ----------
 inline float UI::mapLin_(int raw, int rawMax, float outMin, float outMax,
                          bool invert) {
-  if (raw < 0) raw = 0;
-  if (raw > rawMax) raw = rawMax;
+  raw = math::clamp(raw, 0, rawMax);
   float x = static_cast<float>(raw) / static_cast<float>(rawMax);  // 0..1
   if (invert) x = 1.0f - x;
   return outMin + x * (outMax - outMin);
@@ -107,21 +107,24 @@ inline float UI::mapLin_(int raw, int rawMax, float outMin, float outMax,
 
 inline float UI::mapExp_(int raw, int rawMax, float outMin, float outMax,
                          bool invert) {
-  if (raw < 0) raw = 0;
-  if (raw > rawMax) raw = rawMax;
+  if (rawMax <= 0) return outMin;
+  float x = float(math::clamp(raw, 0, rawMax)) / rawMax;
 
-  float x = static_cast<float>(raw) / static_cast<float>(rawMax);  // 0..1
-  if (invert) x = 1.0f - x;
-
-  constexpr float kGamma = 1.6f;
-
-  if (outMin < 0.0f && outMax <= 0.0f) {
-    const float dB = outMin + x * (outMax - outMin);
-    return powf(10.0f, dB / 20.0f);  // linear gain 0..1
-  } else {
-    const float yNorm = powf(x, kGamma);  // 0..1 (shaped)
-    return outMin + (outMax - outMin) * yNorm;
+  if (outMin < 0 && outMax <= 0) {
+    float dB = outMin + (invert ? 1 - x : x) * (outMax - outMin);
+    return powf(10.f, dB * 0.05f);  // 0.05 = 1/20
   }
+
+  float y = powf(x, 1.6f);
+  return outMin + (outMax - outMin) * (invert ? 1 - y : y);
+}
+
+inline float potToRate(int raw, int rawMax, float msMin, float msMax,
+                       float SR) {
+  raw = math::clamp(raw, 0, rawMax);
+  const float pot = float(raw) / float(rawMax);  // 0..1
+  float ms = msMin + pot * (msMax - msMin);
+  return dsp::msToRate(ms, SR);  // == 1 / (SR * ms / 1000)
 }
 
 // ---------- process one pot ----------
@@ -140,15 +143,22 @@ bool UI::processPot_(int id) {
     case PotSpec::RsExp:
       val = mapExp_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert);
       break;
+    case PotSpec::RsRate:
+      val = potToRate(raw, kAdcMaxCode, spec.outMin, spec.outMax, CalcisTR::SR);
+      break;
+    case PotSpec::RsGCut:
+      val = dsp::hzToGCut<CalcisTR::SR>(
+          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert));
+      break;
+    case PotSpec::RsKDamp:
+      val = dsp::res01ToKDamp(
+          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert));
+      break;
     default:
       break;
   }
 
-  if (spec.step > 0.0f) {
-    val = roundf(val / spec.step) * spec.step;
-  }
-
-  return spec.setCfgValue(val) && spec.reconfig;
+  return spec.setCfgValue(val);
 }
 
 // ===================== NEW: Tabs & Pages =====================
@@ -204,7 +214,7 @@ void UI::update() {
 void UI::onPress_(void* param) {
   UI* self = reinterpret_cast<UI*>(param);
   ++(self->ucfg_.pCfg->trigCounter);
-  self->triggerLED.FadeOff(self->ucfg_.pCfg->ampMs);
+  self->triggerLED.FadeOff(self->ucfg_.pCfg->ampDec * CalcisTR::SR * 1000.f);
 }
 
 // ---------- tab press (select or advance) ----------

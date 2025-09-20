@@ -6,13 +6,6 @@
 namespace zlkm {
 
 template <class TR>
-float CalcisHumilis<TR>::rateFromMs(float ms, int sr) {
-  float samples = ms * (float)sr * 0.001f;
-  if (samples < 1.0f) samples = 1.0f;
-  return 1.0f / samples;  // per-sample step
-}
-
-template <class TR>
 float CalcisHumilis<TR>::softClip(float x) {
   const float t = 0.95f;
   const bool isClip = (x > t) || (x < -t);
@@ -26,32 +19,43 @@ template <class TR>
 CalcisHumilis<TR>::CalcisHumilis(const Cfg *cfg, Feedback *fb)
     : cfg_(cfg), fb_(fb) {
   if constexpr (OS > 1) osDecim_.setup();
+  envAmp.setSustainLevel(0.0f);
+  envAmp.setReleaseRate(0.0f);
+  envPitch.setSustainLevel(0.0f);
+  envPitch.setReleaseRate(0.0f);
+  envClick.setSustainLevel(0.0f);
+  envClick.setReleaseRate(0.0f);
+  envSwarm.setReleaseRate(0.0f);
+  envMorph.setReleaseRate(0.0f);
+
+  gainSlew_.setTimeMsAll(SLEW_MS_ALL);  // configure this once (!!!)
 }
 
 template <class TR>
 void CalcisHumilis<TR>::applyEnvelopeRates() {
-  envAmp.setAttackRate(rateFromMs(cfg_->ampAttackMs, SR * OS));
-  envAmp.setDecayRate(rateFromMs(cfg_->ampMs, SR * OS));
-  envAmp.setSustainLevel(0.0f);
-  envAmp.setReleaseRate(0.0f);
+  envAmp.setAttackRate(cfg_->ampAtt);
+  envAmp.setDecayRate(cfg_->ampDec);
 
-  envPitch.setAttackRate(rateFromMs(cfg_->pitchAttackMs, SR * OS));
-  envPitch.setDecayRate(rateFromMs(cfg_->pitchMs, SR * OS));
-  envPitch.setSustainLevel(0.0f);
-  envPitch.setReleaseRate(0.0f);
+  envPitch.setAttackRate(cfg_->pitchAtt);
+  envPitch.setDecayRate(cfg_->pitchDec);
 
-  envClick.setAttackRate(rateFromMs(cfg_->clickAttackMs, SR * OS));
-  envClick.setDecayRate(rateFromMs(cfg_->clickMs, SR * OS));
-  envClick.setSustainLevel(0.0f);
-  envClick.setReleaseRate(0.0f);
+  envClick.setAttackRate(cfg_->clickAtt);
+  envClick.setDecayRate(cfg_->clickDec);
+
+  envSwarm.setAttackRate(cfg_->swarmAtt);
+  envSwarm.setDecayRate(cfg_->swarmDec);
+
+  envMorph.setAttackRate(cfg_->morphAtt);
+  envMorph.setDecayRate(cfg_->morphDec);
 }
 
 template <class TR>
 void CalcisHumilis<TR>::trigger() {
-  gainSlew_.setTimeMsAll(cfg_->gainSlewMs);
-  envAmp.keyOn(1.0f);
-  envPitch.keyOn(1.0f);
-  envClick.keyOn(1.0f);
+  envAmp.keyOn(1.f);
+  envPitch.keyOn(1.f);
+  envClick.keyOn(1.f);
+  envSwarm.keyOn(1.f);
+  envMorph.keyOn(1.f);
   swarm.reset();
 
   if constexpr (OS > 1) osDecim_.reset();
@@ -83,20 +87,27 @@ void CalcisHumilis<TR>::fillBlock(int32_t *dstLR, size_t nFrames) {
       // ---------- No oversampling path ----------
       const float g = gainSlew_.tick(0);
       const float a = envAmp.tick();
-      const float p = envPitch.tick();
-      const float c = envClick.tick();  // currently unused
 
-      const float pitchSemis =
-          cfg_->pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_->startMult);
+      const float p = envPitch.tick();
+      const float c = envClick.tick();
+      const float sw = envSwarm.tick();
+      const float m = cfg_->morphAmt * envMorph.tick();
+
+      const float cyclesPerSample =
+          cfg_->cyclesPerSample * (1.f + p * cfg_->pitchDepthMult);
       float l = 0.f, r = 0.f;
       switch (cfg_->oscMode) {
         case OscMode::Swarm:
-          swarm.tickStereo(pitchSemis, l, r);
+          swarm.tickStereo(cyclesPerSample, sw, m, l, r);
           break;
         default:
-          swarm.tickStereo(pitchSemis, l, r);
+          swarm.tickStereo(cyclesPerSample, sw, m, l, r);
           break;
       }
+      l = filterL.process(l, cfg_->filterGCut, cfg_->filterKDamp,
+                          cfg_->filterMorph, cfg_->filterDrive);
+      r = filterR.process(r, cfg_->filterGCut, cfg_->filterKDamp,
+                          cfg_->filterMorph, cfg_->filterDrive);
       l = softClip(l * a * g);
       r = softClip(r * a * g);
       outL = l;
@@ -114,16 +125,18 @@ void CalcisHumilis<TR>::fillBlock(int32_t *dstLR, size_t nFrames) {
         const float a = envAmp.tick();
         const float p = envPitch.tick();
         const float c = envClick.tick();  // currently unused
+        const float sw = envSwarm.tick();
+        const float m = envMorph.tick();
 
         const float pitchSemis =
             cfg_->pitchSemis + zlkm::pitch::pitchToSemis(p * cfg_->startMult);
         // Generate at OS*SR
         switch (cfg_->oscMode) {
           case OscMode::Swarm:
-            swarm.tickStereo(pitchSemis, l_os, r_os);
+            swarm.tickStereo(pitchSemis, sw, m, l_os, r_os);
             break;
           default:
-            swarm.tickStereo(pitchSemis, l_os, r_os);
+            swarm.tickStereo(pitchSemis, sw, m, l_os, r_os);
             break;
         }
         // Apply amplitude & output gain at OS-rate (still ZOH controls)

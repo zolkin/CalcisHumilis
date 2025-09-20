@@ -29,22 +29,17 @@ struct PotSource {
 };
 
 struct PotSpec {
-  enum PotResponse { RsLin, RsExp };
+  enum PotResponse { RsLin, RsExp, RsRate, RsGCut, RsKDamp };
 
   // Mapping
   float outMin = 0.0f;
   float outMax = 1.0f;
-  float step = 0.5f;  // quantization step in output units
-  bool reconfig = true;
 
   PotResponse response = RsLin;
 
   float* cfgValue = nullptr;
 
   inline bool setCfgValue(float value) const {
-    if (cfgValue == nullptr || fabsf(value - *cfgValue) < step) {
-      return false;
-    }
     *cfgValue = value;
     return true;
   }
@@ -66,35 +61,45 @@ struct ParameterTab {
 
 class UI {
  public:
+  static constexpr float cyc(float p) { return Calcis::cycles(p); }
+
   struct Cfg {
-    enum Tabs { TabSrc = 0, TabCount };
+    enum Tabs { TabSrc = 0, TabFilter, TabCount };
     Cfg(const Cfg&) = delete;
     Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
       potTabs[TabSrc].enabled = true;
       potTabs[TabSrc].pages[0] = ParameterPage{
           true,
           {
-              /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
-              {-1.f, 1.f, .001f, false, PotSpec::RsLin, &pCfg->pan},   /* Pan */
-              {20.f, 2000.f, .1f, true, PotSpec::RsLin, &pCfg->ampMs}, /* Dec */
-              {2.f, 800.f, .1f, false, PotSpec::RsLin,
-               &pCfg->pitchMs},                                        /* PDec*/
-              {0.f, 1.f, .01f, false, PotSpec::RsExp, &pCfg->outGain}, /* Gain*/
+              /*  MIN,   MAX, INV,  RESPONSE, parameter* */
+              {cyc(130.f), cyc(16640.f), PotSpec::RsLin,
+               &pCfg->cyclesPerSample},                       /* Pitch */
+              {20.f, 2000.f, PotSpec::RsRate, &pCfg->ampDec}, /* Dec */
+              {2.f, 80.f, PotSpec::RsRate, &pCfg->pitchDec},  /* PDec*/
+              {0.f, 1.f, PotSpec::RsLin, &pCfg->outGain},     /* Gain*/
           }};
 
+      auto& sw = pCfg->swarmOsc;
       potTabs[TabSrc].pages[1] = ParameterPage{
           true,
           {
-              /*  MIN,   MAX , STEP, RECONF,  RESPONSE, parameter* */
-              {0.01f, 0.99f, .001f, false, PotSpec::RsLin,
-               &pCfg->swarmOsc.pulseWidth}, /* PWM*/
-              {0.f, 1.f, .001f, true, PotSpec::RsLin,
-               &pCfg->swarmOsc.morph}, /* morph */
-              {0.f, 1200.f, .1f, false, PotSpec::RsExp,
-               &pCfg->swarmOsc.detuneCents}, /* Detune */
-              {0.f, 1.f, .01f, false, PotSpec::RsExp,
-               &pCfg->swarmOsc.stereoSpread}, /* Spread */
+              /*  MIN,  MAX,  RESPONSE     , parameter* */
+              {0.01f, 0.99f, PotSpec::RsLin, &sw.pulseWidth}, /* PWM*/
+              {0.f, 1.f, PotSpec::RsLin, &sw.morph},          /* morph */
+              {1.f, 1.2599f, PotSpec::RsLin, &sw.detuneMul},  /* Detune */
+              {0.f, 1.f, PotSpec::RsLin, &sw.stereoSpread},   /* Spread */
           }};
+
+      potTabs[TabFilter].enabled = true;
+      potTabs[TabFilter].pages[0] =
+          ParameterPage{true,
+                        {
+                            /*  MIN,   MAX, INV,  RESPONSE, parameter* */
+                            {0.f, 1.f, PotSpec::RsKDamp, &pCfg->filterKDamp},
+                            {20.f, 20000.f, PotSpec::RsGCut, &pCfg->filterGCut},
+                            {0.f, 1.f, PotSpec::RsLin, &pCfg->filterMorph},
+                            {0.f, 16.f, PotSpec::RsLin, &pCfg->filterDrive},
+                        }};
     }
 
     // Trigger button (unchanged)

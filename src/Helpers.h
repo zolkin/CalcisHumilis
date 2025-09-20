@@ -25,6 +25,10 @@ static inline float pitchToSemis(float s) { return s * 12.0f; }
 
 namespace dsp {
 
+constexpr float msToRate(const float ms, const float sr) {
+  return 1.f / (sr * ms * .001f > 1.f ? sr * ms * .001f : 1.f);
+}
+
 inline float polyblep(float t, float dt) {
   // t < dt
   if (t < dt) {
@@ -45,12 +49,30 @@ inline float wrap01(float u) {
   return u;
 }
 
+// Prewarp: Hz -> gCut  (g = tan(pi * f / SR))
+template <int SR>
+constexpr float hzToGCut(float hz) {
+  float safeHz = (hz < 20.0f) ? 20.0f : hz;
+  const float nyq = 0.5f * SR;
+  const float maxHz = 0.45f * nyq * 2.0f;  // ~0.45*fs
+  if (safeHz > maxHz) safeHz = maxHz;
+  return tanf(float(M_PI) * safeHz / float(SR));
+}
+
+// Map UI resonance [0..1] -> Q in [Qmin..Qmax] -> kDamp = 2/Q
+constexpr float res01ToKDamp(float res01, float Qmin = 0.5f,
+                             float Qmax = 20.0f) {
+  float r = (res01 < 0.0f) ? 0.0f : (res01 > 1.0f ? 1.0f : res01);
+  const float Q = Qmin + r * (Qmax - Qmin);
+  return 2.0f / Q;
+}
+
 }  // namespace dsp
 
 namespace math {
 
 template <class T>
-inline T clamp(T t, T min, T max) {
+constexpr T clamp(const T t, const T min, const T max) {
   return t < min ? min : t > max ? max : t;
 }
 

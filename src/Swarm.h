@@ -9,9 +9,8 @@ namespace zlkm {
 
 template <int SR>
 struct SwarmConfig {
-  int voices = 3;             // 1..N
-  float baseTuneHz = 65.0f;   // base tuning in Hz
-  float detuneCents = 3.0f;   // spread per ring (±c, ±2c, …)
+  int voices = 9;             // 1..N
+  float detuneMul = 1.2599f;  // spread per ring (p+-p*c, p+-2*p*c…)
   float stereoSpread = 0.6f;  // 0..1 width
   float gainBase = 0.6f;      // center weight: base^ring
   bool randomPhase = true;    // randomize start phase
@@ -23,6 +22,7 @@ struct SwarmConfig {
 template <int N, int SR>
 class SwarmMorph {
   static constexpr int kMaxSwarmVoices = N;
+  static constexpr float INV_SR_F = 1.f / float(SR);
 
  public:
   explicit SwarmMorph(const SwarmConfig<SR>& c = SwarmConfig<SR>()) {
@@ -32,7 +32,6 @@ class SwarmMorph {
   void setConfig(const SwarmConfig<SR>& c) {
     cfg_ = c;
     cfg_.voices = zlkm::math::clamp(cfg_.voices, 1, N);
-    osc_.morph.fill(cfg_.morph);
     osc_.pulseWidth.fill(cfg_.pulseWidth);
   }
 
@@ -44,25 +43,26 @@ class SwarmMorph {
     osc_.reset(cfg_.randomPhase);
   }
 
-  inline void tickStereo(const float totalPitchSemis, float& outL,
-                         float& outR) {
+  inline void tickStereo(const float cyclesPerSample, const float swarmEnv,
+                         const float morphEnv, float& outL, float& outR) {
     const int VN = cfg_.voices;
-
-    // base freq in Hz
-    const float baseMul = exp2f(totalPitchSemis * (1.f / 12.f));
-    const float f0 = cfg_.baseTuneHz * baseMul;
+    const float c0 = cyclesPerSample;
 
     for (int i = 0; i < VN; ++i) {
-      osc_.freqNowHz[i] = f0 * detuneMul_[i];
+      osc_.cyclesPerSample[i] =
+          c0 * math::interpolate(1.f, detuneMul_[i], swarmEnv);
+      osc_.morph[i] = math::clamp(cfg_.morph + morphEnv, 0.f, 1.f);
     }
 
     osc_.tickFirst(cfg_.voices, tmp_);
 
     float L = 0.f, R = 0.f;
+    // per sample (or control-rate), e in [0..1]
+    const float kEqualPan = 0.70710678f;  // 1/sqrt(2)
     for (int i = 0; i < VN; ++i) {
       const float v = gains_[i] * tmp_[i];
-      L += v * panL_[i];
-      R += v * panR_[i];
+      L += v * math::interpolate(kEqualPan, panL_[i], swarmEnv);
+      R += v * math::interpolate(kEqualPan, panR_[i], swarmEnv);
     }
     outL = L;
     outR = R;
@@ -78,40 +78,38 @@ class SwarmMorph {
   void seedDetune(int VN) {
     const float cents2semi = 0.01f;
     int idx = 0;
-    if (VN & 1) {
-      detuneMul_[idx++] = 1.f;
-    }  // center
-    for (int k = 1; idx < VN; ++k) {
-      const float semi = cfg_.detuneCents * k * cents2semi;
-      const float mul = exp2f(semi * (1.f / 12.f));
-      detuneMul_[idx++] = mul;
-      if (idx < VN) detuneMul_[idx++] = 1.f / mul;
+    float cur = VN & 1 ? 1.0f : cfg_.detuneMul;
+    for (int k = 0; idx < VN; ++k) {
+      detuneMul_[idx++] = cur;
+      if (idx < VN) {
+        detuneMul_[idx++] = 1.f / cur;
+      }
+      cur *= cfg_.detuneMul;
     }
-    for (int i = VN; i < N; ++i) detuneMul_[i] = 0.f;
   }
 
   static inline int ringIndexFor(int i, int VN) {
     if (VN & 1) {
-      if (i == 0) return 0;
-      int k = (i + 1) / 2;
+      const int k = (i + 1) / 2;
       return (i & 1) ? +k : -k;
-    } else {
-      int k = (i / 2) + 1;
-      return (i & 1) ? -k : +k;
     }
+    const int k = (i / 2) + 1;
+    return (i & 1) ? -k : +k;
   }
 
   void seedPan(int VN) {
+    if (VN == 1) {
+      panL_[0] = panR_[0] = 0.f;
+      return;
+    }
     const int maxRing = (VN & 1) ? (VN - 1) / 2 : (VN / 2);
+    const float fInvMaxRing = 1.f / float(maxRing);
     for (int i = 0; i < VN; ++i) {
       const int ring = ringIndexFor(i, VN);
-      float pNorm = (VN == 1) ? 0.f : (maxRing ? float(ring) / maxRing : 0.f);
-      const float p = fminf(fmaxf(pNorm * cfg_.stereoSpread, -1.f), 1.f);
+      float pNorm = maxRing ? float(ring) * fInvMaxRing : 0.f;
+      const float p = math::clamp(pNorm * cfg_.stereoSpread, -1.f, 1.f);
       panL_[i] = panGainL(p);
       panR_[i] = panGainR(p);
-    }
-    for (int i = VN; i < N; ++i) {
-      panL_[i] = panR_[i] = 0.f;
     }
   }
 
@@ -122,19 +120,19 @@ class SwarmMorph {
       gains_[idx++] = 1.f;
       sum += 1.f;
     }
-    for (int k = 1; idx < VN; ++k) {
-      const float w = powf(cfg_.gainBase, float(k));
-      gains_[idx++] = w;
-      sum += w;
+    float curGain = cfg_.gainBase;
+    while (idx < VN) {
+      gains_[idx++] = curGain;
+      sum += curGain;
       if (idx < VN) {
-        gains_[idx++] = w;
-        sum += w;
+        gains_[idx++] = curGain;
+        sum += curGain;
       }
+      curGain *= cfg_.gainBase;
     }
     const float inv = (sum > 0.f) ? 1.f / sum : 1.f;
     const float norm = inv / sqrtf(float(VN));
     for (int i = 0; i < VN; ++i) gains_[i] *= norm;
-    for (int i = VN; i < N; ++i) gains_[i] = 0.f;
   }
 
  private:
