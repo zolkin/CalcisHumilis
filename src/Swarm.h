@@ -31,7 +31,6 @@ class SwarmMorph {
 
   void setConfig(const SwarmConfig<SR>& c) {
     cfg_ = c;
-    cfg_.voices = zlkm::math::clamp(cfg_.voices, 1, N);
     osc_.pulseWidth.fill(cfg_.pulseWidth);
   }
 

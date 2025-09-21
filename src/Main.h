@@ -7,6 +7,8 @@
 
 #include <atomic>
 
+#include "spin_lock.h"
+
 namespace zlkm {
 /**
  * Dual-core harness for RP2350 (Pico 2).
@@ -20,18 +22,23 @@ class MainApp {
   static void core0_start(const char* name) {
     appName_ = name;
     Serial.begin(115200);
-    waitForSerial(5000);  // keep your original behavior
+    waitForSerial(10000);  // keep your original behavior
     Log.begin(LOG_LEVEL_TRACE, &Serial);
     get();  // initialize the app for the first time
+    delay(100);
     Log.infoln("Application %s started on core0", name);
-    started_ = true;
+    c0Started_ = true;
+    while (!c1Started_) {
+      delay(1);
+    }
   }
 
   static void core1_start() {
-    while (!started_) {
+    while (!c0Started_) {
       delay(1);
     }
     Log.infoln("Application %s started on core1", appName_);
+    c1Started_ = true;
   }
 
   // -------- Core 1: Audio --------
@@ -58,27 +65,23 @@ class MainApp {
   }
 
   void snapAudioCfg() {
-    mutex_enter_blocking(&cfgMutex_);
+    sl_guard guard{cfgSL_};
     audioCfg_ = sharedCfg_;
-    mutex_exit(&cfgMutex_);
   }
 
   void publishAudioCfg() {
-    mutex_enter_blocking(&cfgMutex_);
+    sl_guard guard{cfgSL_};
     sharedCfg_ = uiAudioCfg_;
-    mutex_exit(&cfgMutex_);
   }
 
   void publishUIFeedback() {
-    mutex_enter_blocking(&fbMutex_);
+    sl_guard guard{fbSL_};
     sharedFb_ = audioUiFb_;
-    mutex_exit(&fbMutex_);
   }
 
   void snapUIFeedback() {
-    mutex_enter_blocking(&fbMutex_);
+    sl_guard guard{fbSL_};
     uiFb_ = sharedFb_;
-    mutex_exit(&fbMutex_);
   }
 
   static MainApp& get() {
@@ -86,28 +89,26 @@ class MainApp {
     return inst;
   }
 
-  MainApp() {
-    mutex_init(&cfgMutex_);
-    mutex_init(&fbMutex_);
-  }
+  MainApp() = default;
 
   using Cfg = typename AudioSource::Cfg;
   using Feedback = typename AudioSource::Feedback;
 
-  mutex_t cfgMutex_;
+  spin_lock cfgSL_;
   Cfg sharedCfg_{};
   Cfg audioCfg_{};
   Cfg uiAudioCfg_{};
 
-  mutex_t fbMutex_;
+  spin_lock fbSL_;
   Feedback sharedFb_{};
   Feedback audioUiFb_{};
   Feedback uiFb_{};
 
-  AudioSource audio_{&audioCfg_, &audioUiFb_};
   UI ui_{&uiAudioCfg_, &uiFb_};
+  AudioSource audio_{&audioCfg_, &audioUiFb_};
 
-  static inline std::atomic<bool> started_ = {false};
+  static inline std::atomic<bool> c0Started_ = {false};
+  static inline std::atomic<bool> c1Started_ = {false};
   static inline const char* appName_ = nullptr;
 };
 

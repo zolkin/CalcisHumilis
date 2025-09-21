@@ -1,6 +1,5 @@
 #pragma once
 
-#include <AnalogInput.h>
 #include <Arduino.h>
 #include <JLED.h>
 #include <OneButton.h>
@@ -9,27 +8,27 @@
 
 #include "AudioTraits.h"
 #include "CalcisHumilis.h"
+#include "HW\ADSPinReader.h"
+#include "MultiInput.h"
 
 // Identify each pot (extend as you add more)
 namespace zlkm {
 
 using CalcisTR = AudioTraits<48000, 1, 32, 64>;
 using Calcis = CalcisHumilis<CalcisTR>;
-
-struct PotSource {
-  enum PotId { A = 0, B, C, D, Count };
-
-  // Source selection
-  bool useAds = false;     // false = internal ADC (RAR), true = ADS1x15
-  uint8_t adsChannel = 0;  // 0..3 for ADS1x15 when useAds == true
-
-  // For internal ADC
-  uint8_t pin = A0;
-  bool invert = false;  // set true if wired “backwards”
-};
+using ClcisPots = MultiInput<hw::ADS1015Reader>;
 
 struct PotSpec {
-  enum PotResponse { RsLin, RsExp, RsRate, RsGCut, RsKDamp };
+  enum PotResponse {
+    RsLin,
+    RsExp,
+    RsRate,
+    RsGCut,
+    RsKDamp,
+    RsMorph,
+    RsDrive,
+    RsInt
+  };
 
   // Mapping
   float outMin = 0.0f;
@@ -37,69 +36,82 @@ struct PotSpec {
 
   PotResponse response = RsLin;
 
-  float* cfgValue = nullptr;
+  void* cfgValue = nullptr;
 
-  inline bool setCfgValue(float value) const {
-    *cfgValue = value;
-    return true;
+  template <class T>
+  inline void setCfgValue(T value) const {
+    *reinterpret_cast<T*>(cfgValue) = value;
   }
 };
 
 struct ParameterPage {
-  bool enabled = false;
+  static constexpr int POT_COUNT = 4;
 
-  PotSpec pots[PotSource::Count];
+  PotSpec pots[POT_COUNT];
+  bool enabled = false;
 };
 
 struct ParameterTab {
   static constexpr int MAX_PAGE = 4;
 
-  bool enabled = false;
-
   ParameterPage pages[MAX_PAGE];
+  bool enabled = false;
 };
 
 class UI {
  public:
   static constexpr float cyc(float p) { return Calcis::cycles(p); }
+  using CH = Calcis;
 
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
+
+    CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
+
     Cfg(const Cfg&) = delete;
     Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
       potTabs[TabSrc].enabled = true;
       potTabs[TabSrc].pages[0] = ParameterPage{
-          true,
           {
               /*  MIN,   MAX, INV,  RESPONSE, parameter* */
-              {cyc(130.f), cyc(16640.f), PotSpec::RsLin,
-               &pCfg->cyclesPerSample},                       /* Pitch */
-              {20.f, 2000.f, PotSpec::RsRate, &pCfg->ampDec}, /* Dec */
-              {2.f, 80.f, PotSpec::RsRate, &pCfg->pitchDec},  /* PDec*/
-              {0.f, 1.f, PotSpec::RsLin, &pCfg->outGain},     /* Gain*/
-          }};
+              {cyc(65.f), cyc(260.f), PotSpec::RsLin,
+               &pCfg->cyclesPerSample}, /* Pitch */
+              {20.f, 2000.f, PotSpec::RsRate, &env(CH::EnvAmp).decay}, /* Dec */
+              {2.f, 80.f, PotSpec::RsRate, &env(CH::EnvPitch).decay},  /* PDec*/
+              {0.f, 1.f, PotSpec::RsLin, &pCfg->outGain},              /* Gain*/
+          },
+          true};
 
       auto& sw = pCfg->swarmOsc;
       potTabs[TabSrc].pages[1] = ParameterPage{
-          true,
           {
               /*  MIN,  MAX,  RESPONSE     , parameter* */
               {0.01f, 0.99f, PotSpec::RsLin, &sw.pulseWidth}, /* PWM*/
               {0.f, 1.f, PotSpec::RsLin, &sw.morph},          /* morph */
               {1.f, 1.2599f, PotSpec::RsLin, &sw.detuneMul},  /* Detune */
               {0.f, 1.f, PotSpec::RsLin, &sw.stereoSpread},   /* Spread */
-          }};
+          },
+          true};
+      potTabs[TabSrc].pages[2] = ParameterPage{
+          {
+              /*  MIN,  MAX,  RESPONSE     , parameter* */
+              {1.f, 16.f, PotSpec::RsInt, &sw.voices}, /* PWM*/
+              {0.f, 1.f, PotSpec::RsLin, nullptr},     /* morph */
+              {1.f, 1.2599f, PotSpec::RsLin, nullptr}, /* Detune */
+              {0.f, 1.f, PotSpec::RsLin, nullptr},     /* Spread */
+          },
+          true};
 
       potTabs[TabFilter].enabled = true;
       potTabs[TabFilter].pages[0] =
-          ParameterPage{true,
-                        {
+          ParameterPage{{
                             /*  MIN,   MAX, INV,  RESPONSE, parameter* */
-                            {0.f, 1.f, PotSpec::RsKDamp, &pCfg->filterKDamp},
-                            {20.f, 20000.f, PotSpec::RsGCut, &pCfg->filterGCut},
-                            {0.f, 1.f, PotSpec::RsLin, &pCfg->filterMorph},
-                            {0.f, 16.f, PotSpec::RsLin, &pCfg->filterDrive},
-                        }};
+                            {0.f, 1.f, PotSpec::RsKDamp, &pCfg->filter},
+                            {0.f, 1.f, PotSpec::RsGCut, &pCfg->filter},
+                            {0.f, 1.f, PotSpec::RsMorph, &pCfg->filter},
+                            {0.f, 1.f, PotSpec::RsDrive, &pCfg->filter},
+                        },
+                        true};
     }
 
     // Trigger button (unchanged)
@@ -115,18 +127,27 @@ class UI {
     uint8_t tabPageCount[kNumTabs] = {3, 1, 1, 1};  // Tab 0 = 1 page for now
 
     // Scanning/timing
-    uint16_t pollMs = 5;           // ~200 Hz
-    float snapMultiplier = 0.01f;  // ResponsiveAnalogRead smoothing
-    float activityThresh = 1.0f;   // counts (default in RAR ≈ 4)
+    uint16_t pollMs = 5;          // ~200 Hz
+    float snapMultiplier = 0.0f;  // ResponsiveAnalogRead smoothing
+    float activityThresh = 32.f;  // counts (default in RAR ≈ 4)
 
     Calcis::Cfg* pCfg;
 
-    PotSource potSources[PotSource::Count] = {
-        /* ADS ,CH,PIN, INV*/
-        {true, 1, 0, false},
-        {false, 0, A2, false},
-        {false, 0, A1, false},
-        {false, 0, A0, false},
+    hw::ADS1015Reader::Cfg readerCfg = {
+        4,                    /* i2cSDA */
+        5,                    /* i2cSCL */
+        400000,               /* i2cHz */
+        0x48,                 /* i2cAddr */
+        GAIN_ONE,             /* gain */
+        RATE_ADS1015_3300SPS, /* rate */
+        3.3f                  /* vrefVolts */
+    };
+
+    ClcisPots::Cfg potsCfg = {
+        {0, 1, 2, 3}, /* channels */
+        4095,         /* maxCode */
+        0.2f,         /* emalAlpha */
+        32.f,         /* activityLSB */
     };
 
     // Pots
@@ -136,9 +157,6 @@ class UI {
   explicit UI(Calcis::Cfg* cfg, Calcis::Feedback* fb);
 
   void update();  // call each loop()
-  static void waitForSerial(unsigned long timeoutMs = 3000);
-
-  void attachADS();
 
  private:
   Cfg ucfg_;
@@ -157,17 +175,17 @@ class UI {
   };
   std::array<TabCtx, kNumTabs> tabCtx_;  // NEW
 
+  SafeFilterParams<CalcisTR::SR> filterParams_;
+
   // Pots
-  std::array<AnalogInput, static_cast<size_t>(PotSource::Count)> pots_;
+  hw::ADS1015Reader adsPinReader_;
+  ClcisPots multiInput_;
+
   uint32_t tPrev_ = 0;
 
   // Tabs / pages state
   uint8_t currentTab_ = 0;
   uint8_t currentPage_[kNumTabs] = {0, 0, 0, 0};
-
-  // ADS  (optional)
-  Adafruit_ADS1015 ads_;
-  float adsVref_ = 3.3f;  // your pot runs off 3V3
 
   // LEDs
   JLed triggerLED{2};
@@ -176,8 +194,6 @@ class UI {
   void tickLED();
 
   // Setup helpers
-  void initAdc_();
-  void initPots_(bool adsOk);
   void initTabs_();
 
   // Handlers
@@ -197,7 +213,7 @@ class UI {
                               bool invert);
 
   // Per-pot processing — returns true if config changed
-  bool processPot_(int id);
+  void processPot_(int id);
 
   // NEW: Tabs / pages
   void scanTabButtons_();

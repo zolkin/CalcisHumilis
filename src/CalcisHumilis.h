@@ -7,10 +7,10 @@
 #include <Arduino.h>
 #include <Stream.h>
 
+#include "ADEnvelopes.h"
 #include "BaseOsc.h"
 #include "DJFilter.h"
 #include "FirOversample.h"  // the helper above
-#include "Slew.h"
 #include "Swarm.h"
 
 namespace zlkm {
@@ -33,25 +33,40 @@ class CalcisHumilis {
   static constexpr float rate(float ms) { return dsp::msToRate(ms, SR); }
   static constexpr float cycles(float hz) { return hz * INV_SR; }
 
-  enum class OscMode : uint8_t { Basic = 0, Swarm };
+  using Filter = DJFilterTPT<SR * OS>;
+  using FilterCfg = typename Filter::Cfg;
+
+  enum OscMode { OscSwarm = 0, OscCount };
+
+  enum Envs {
+    EnvAmp = 0,
+    EnvPitch,
+    EnvClick,
+    EnvFilter,
+    EnvSwarm,
+    EnvMorph,
+    EnvCount
+  };
+
+  using Envelopes = ADEnvelopes<EnvCount>;
+  using EnvCfg = typename Envelopes::EnvCfg;
 
   struct Cfg {
-    OscMode oscMode = OscMode::Swarm;
+    OscMode oscMode = OscSwarm;
 
     SwarmConfig<SR * OS> swarmOsc;
 
     float cyclesPerSample = cycles(65.f);
     float pitchDepthMult = 8.0f;
 
-    float ampAtt = rate(1.f);
-    float ampDec = rate(330.f);
-
-    float pitchAtt = rate(10.f);
-    float pitchDec = rate(20.0f);
-
-    float clickAtt = rate(1.f);
-    float clickDec = rate(6.f);
-    float clickAmt = .2f;
+    std::array<EnvCfg, EnvCount> envs = {
+        EnvCfg{rate(1.f), rate(330.f)},       // amp
+        EnvCfg{rate(10.f), rate(20.f), 8.f},  // pitch
+        EnvCfg{rate(1.f), rate(6.f), .2f},    // click
+        EnvCfg{rate(1.f), rate(6.f), .2f},    // swarm
+        EnvCfg{rate(1.f), rate(6.f), .2f},    // morph
+        EnvCfg{rate(1.f), rate(6.f), .2f},    // filter
+    };
 
     float outGain = .7f;
     float gainSlew = 3.0f;
@@ -64,10 +79,7 @@ class CalcisHumilis {
     float morphDec = rate(200.f);
     float morphAmt = .8f;
 
-    float filterGCut = dsp::hzToGCut<SR>(2000.f);
-    float filterKDamp = dsp::res01ToKDamp(0.f);
-    float filterMorph = 0.f;
-    float filterDrive = 0.f;
+    FilterCfg filter;
 
     int trigCounter = 0;
 
@@ -88,7 +100,6 @@ class CalcisHumilis {
 
  private:
   float softClip(float x);
-  void applyEnvelopeRates();
 
   static inline float hzToPitch(float hz) { return log2f(hz); }
   static inline float pitchToHz(float pit) { return exp2f(pit); }
@@ -96,18 +107,15 @@ class CalcisHumilis {
 
   const Cfg *cfg_;
   Feedback *fb_;
-  audio_tools::ADSR envAmp, envPitch, envClick;
-  audio_tools::ADSR envFilter;  // unused here but kept
 
-  audio_tools::ADSR envSwarm, envMorph;
+  Envelopes envelopes_;
 
   // Oscillators run at OS*SR so their phase math sees true step size
   SwarmMorph<MAX_SWARM_VOICES, SR * OS> swarm;
 
-  SlewOnePoleN<1, SR> gainSlew_{};
   float currentPan = 0.5f;
 
-  DJFilterTPT<SR * OS> filterL, filterR;
+  Filter filterL, filterR;
 
   // FIR at OS*SR, then decimate by OS
   OversampleDecimator<OS, NTAPS> osDecim_;

@@ -29,6 +29,10 @@ constexpr float msToRate(const float ms, const float sr) {
   return 1.f / (sr * ms * .001f > 1.f ? sr * ms * .001f : 1.f);
 }
 
+constexpr float rateToMs(const float rt, const float sr) {
+  return 1.f / rt / sr * 1000.f;
+}
+
 inline float polyblep(float t, float dt) {
   // t < dt
   if (t < dt) {
@@ -60,11 +64,13 @@ constexpr float hzToGCut(float hz) {
 }
 
 // Map UI resonance [0..1] -> Q in [Qmin..Qmax] -> kDamp = 2/Q
-constexpr float res01ToKDamp(float res01, float Qmin = 0.5f,
-                             float Qmax = 20.0f) {
-  float r = (res01 < 0.0f) ? 0.0f : (res01 > 1.0f ? 1.0f : res01);
-  const float Q = Qmin + r * (Qmax - Qmin);
-  return 2.0f / Q;
+constexpr float res01ToKDamp_smooth(float res01, float Qmin = 0.707f,
+                                    float Qmax = 10.0f, float curve = 2.0f) {
+  // perceptual curve
+  const float r = (res01 < 0.f) ? 0.f : (res01 > 1.f ? 1.f : res01);
+  const float t = powf(r, curve);
+  const float Q = Qmin * powf(Qmax / Qmin, t);
+  return 2.0f / Q;  // k = 2/Q
 }
 
 }  // namespace dsp
@@ -78,6 +84,16 @@ constexpr T clamp(const T t, const T min, const T max) {
 
 inline float interpolate(float from, float to, float t) {
   return (1.0f - t) * from + t * to;
+}
+
+// Catmull–Rom cubic interpolation (uniform, tension=0)
+static inline float lerp_cubic(const float y0, const float y1, const float y2,
+                               const float y3, float a) {
+  const float a2 = a * a;
+  const float a3 = a2 * a;
+  return 0.5f * ((2.0f * y1) + (-y0 + y2) * a +
+                 (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3) * a2 +
+                 (-y0 + 3.0f * y1 - 3.0f * y2 + y3) * a3);
 }
 
 static constexpr float INV_PI = 1.0f / PI;

@@ -11,14 +11,13 @@ static constexpr int kAdcMaxCode = 4095;  // RP2040 12-bit
 UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
     : ucfg_(cfg),
       fb_(fb),
-      trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true) {
-  initAdc_();
+      trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true),
+      adsPinReader_(ucfg_.readerCfg),
+      multiInput_(adsPinReader_, ucfg_.potsCfg) {
   initTabs_();  // NEW
 
   trigBtn_.attachPress(UI::onPress_, this);
   trigBtn_.setDebounceMs(5);
-
-  attachADS();
 
   Log.notice(F("[UI] ready" CR));
 }
@@ -26,87 +25,36 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
 void UI::tickLED() {
   if (saturationCounter_ < fb_->saturationCounter) {
     clippingLED.FadeOff(80);
+    saturationCounter_ = fb_->saturationCounter;
   }
   triggerLED.Update();
   clippingLED.Update();
 }
 
-// ---------- ADS attach ----------
-void UI::attachADS() {
-  Wire.setSDA(0);  // GP4
-  Wire.setSCL(1);  // GP5
-  Wire.begin();
-  Wire.setClock(400000);
-
-  bool needAds = false;
-  bool adsOk_ = false;
-  for (const auto& ps : ucfg_.potSources)
-    if (ps.useAds) {
-      needAds = true;
-      break;
-    }
-
-  if (needAds) {
-    adsOk_ = ads_.begin(0x48);
-    if (adsOk_) {
-      ads_.setGain(GAIN_ONE);
-      ads_.setDataRate(RATE_ADS1015_3300SPS);
-      Log.notice(F("[UI] ADS1015 ready (±4.096V, 3300 SPS)" CR));
-    } else {
-      Log.error(F("[UI] ADS1x15 not found at 0x48" CR));
-    }
+inline float stickEnds(float f) {
+  static constexpr float stickyEnds = 0.05;
+  static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
+  if (f < stickyEnds) {
+    return 0.f;
   }
-  initPots_(adsOk_);
-}
-
-// ---------- init ADC ----------
-void UI::initAdc_() {
-#if defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_RASPBERRY_PI_PICO) || \
-    defined(ARDUINO_ARCH_MBED_RP2040)
-  analogReadResolution(12);  // 0..4095
-#endif
-}
-
-// ---------- wait for serial ----------
-void UI::waitForSerial(unsigned long timeoutMs) {
-#if defined(USBCON) || defined(SERIAL_PORT_USBVIRTUAL)
-  const unsigned long t0 = millis();
-  while (!(Serial && Serial.dtr()) && (millis() - t0) < timeoutMs) {
-    delay(10);
+  if (f > 1.f - stickyEnds) {
+    return 1.f;
   }
-#else
-  (void)timeoutMs;
-#endif
-}
-
-// ---------- init pots ----------
-void UI::initPots_(bool adsOk) {
-  // Build unified pot readers
-  int pot_idx = 0;
-  for (int i = 0; i < PotSource::Count; ++i) {
-    const auto& ps = ucfg_.potSources[i];
-    if (ps.useAds && adsOk) {
-      pots_[i].attachADS(&ads_, ps.adsChannel, 3.3f);
-      pots_[i].setADSParams(kAdcMaxCode, /*emaAlpha=*/0.12f);
-    } else {
-      pots_[i].attachInternal(ps.pin, /*sleep=*/true);
-      pots_[i].setRARParams(kAdcMaxCode, ucfg_.snapMultiplier,
-                            ucfg_.activityThresh, /*edgeSnap=*/true);
-    }
-  }
+  return f * reducedRangeScale;
 }
 
 // ---------- map helpers ----------
 inline float UI::mapLin_(int raw, int rawMax, float outMin, float outMax,
-                         bool invert) {
+                         bool invert = false) {
   raw = math::clamp(raw, 0, rawMax);
   float x = static_cast<float>(raw) / static_cast<float>(rawMax);  // 0..1
   if (invert) x = 1.0f - x;
+  x = stickEnds(x);
   return outMin + x * (outMax - outMin);
 }
 
 inline float UI::mapExp_(int raw, int rawMax, float outMin, float outMax,
-                         bool invert) {
+                         bool invert = false) {
   if (rawMax <= 0) return outMin;
   float x = float(math::clamp(raw, 0, rawMax)) / rawMax;
 
@@ -116,7 +64,9 @@ inline float UI::mapExp_(int raw, int rawMax, float outMin, float outMax,
   }
 
   float y = powf(x, 1.6f);
-  return outMin + (outMax - outMin) * (invert ? 1 - y : y);
+  if (invert) y = 1.0f - y;
+  y = stickEnds(y);
+  return outMin + (outMax - outMin) * y;
 }
 
 inline float potToRate(int raw, int rawMax, float msMin, float msMax,
@@ -128,37 +78,55 @@ inline float potToRate(int raw, int rawMax, float msMin, float msMax,
 }
 
 // ---------- process one pot ----------
-bool UI::processPot_(int id) {
+void UI::processPot_(int id) {
   const PotSpec& spec = getPotSpec(id);
-  const PotSource& source = ucfg_.potSources[id];
+  if (spec.cfgValue == nullptr) {
+    return;
+  }
 
-  if (!pots_[id].update()) return false;
-  int raw = pots_[id].value();  // 0..4095
+  int raw = multiInput_.value(id);  // 0..4095
 
-  float val = 0.0f;
+  Log.infoln("POT[%d] value = %d", id, raw);
+
   switch (spec.response) {
     case PotSpec::RsLin:
-      val = mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert);
+      spec.setCfgValue(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       break;
     case PotSpec::RsExp:
-      val = mapExp_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert);
+      spec.setCfgValue(mapExp_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       break;
     case PotSpec::RsRate:
-      val = potToRate(raw, kAdcMaxCode, spec.outMin, spec.outMax, CalcisTR::SR);
+      spec.setCfgValue(
+          potToRate(raw, kAdcMaxCode, spec.outMin, spec.outMax, CalcisTR::SR));
       break;
     case PotSpec::RsGCut:
-      val = dsp::hzToGCut<CalcisTR::SR>(
-          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert));
+      filterParams_.setCutoff01(
+          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
+      spec.setCfgValue(filterParams_.cfg());
       break;
     case PotSpec::RsKDamp:
-      val = dsp::res01ToKDamp(
-          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax, source.invert));
+      filterParams_.setRes01(
+          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
+      spec.setCfgValue(filterParams_.cfg());
       break;
+    case PotSpec::RsMorph:
+      filterParams_.setMorph01(
+          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
+      spec.setCfgValue(filterParams_.cfg());
+      break;
+
+    case PotSpec::RsDrive:
+      filterParams_.setDrive01(
+          mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
+      spec.setCfgValue(filterParams_.cfg());
+    case PotSpec::RsInt: {
+      int val = int(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
+      Log.infoln("Setting RsInt to %d", val);
+      spec.setCfgValue(val);
+    } break;
     default:
       break;
   }
-
-  return spec.setCfgValue(val);
 }
 
 // ===================== NEW: Tabs & Pages =====================
@@ -198,12 +166,12 @@ void UI::update() {
   if (now - tPrev_ < ucfg_.pollMs) return;
   tPrev_ = now;
 
-  bool changed = false;
-
   // Only enabled tabs processes pots (unchanged behavior)
-  if (ucfg_.potTabs[currentTab_].enabled) {
-    for (int i = 0; i < PotSource::Count; ++i) {
-      changed |= processPot_(i);
+  if (ucfg_.potTabs[currentTab_].enabled && multiInput_.update()) {
+    for (int i = 0; i < ParameterPage::POT_COUNT; ++i) {
+      if (multiInput_.valueChanged(i)) {
+        processPot_(i);
+      }
     }
   }
 
@@ -214,7 +182,8 @@ void UI::update() {
 void UI::onPress_(void* param) {
   UI* self = reinterpret_cast<UI*>(param);
   ++(self->ucfg_.pCfg->trigCounter);
-  self->triggerLED.FadeOff(self->ucfg_.pCfg->ampDec * CalcisTR::SR * 1000.f);
+  self->triggerLED.FadeOff(
+      dsp::rateToMs(self->ucfg_.env(CH::EnvAmp).decay, CalcisTR::SR));
 }
 
 // ---------- tab press (select or advance) ----------
@@ -261,12 +230,12 @@ void UI::updateLeds_() {
 void UI::blinkLed_(uint8_t tab, uint8_t count) {
   const uint8_t pin = ucfg_.tabLedPins[tab];
   digitalWrite(pin, LOW);
-  delay(40);
+  delay(100);
   for (uint8_t n = 0; n < count; ++n) {
     digitalWrite(pin, HIGH);
-    delay(80);
+    delay(100);
     digitalWrite(pin, LOW);
-    delay(80);
+    delay(100);
   }
   if (tab == currentTab_) digitalWrite(pin, HIGH);
 }
