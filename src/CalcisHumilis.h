@@ -8,9 +8,9 @@
 #include <Stream.h>
 
 #include "ADEnvelopes.h"
-#include "BaseOsc.h"
 #include "DJFilter.h"
 #include "FirOversample.h"  // the helper above
+#include "MorphOsc.h"
 #include "Swarm.h"
 
 namespace zlkm {
@@ -23,13 +23,14 @@ class CalcisHumilis {
 
   static constexpr int SR = TR::SR;
   static constexpr int OS = TR::OS;
-  static constexpr int MAX_SWARM_VOICES = 16;
+  using OutBuffer = typename TR::BufferT;
+  using IntBuffer = std::array<float, TR::BLOCK_ELEMS>;
 
   static constexpr float INV_SR = 1.f / float(SR);
 
-  static constexpr float SLEW_MS_ALL = 3.f;
-
  public:
+  static constexpr int MAX_SWARM_VOICES = 16;
+
   static constexpr float rate(float ms) { return dsp::msToRate(ms, SR); }
   static constexpr float cycles(float hz) { return hz * INV_SR; }
 
@@ -60,24 +61,17 @@ class CalcisHumilis {
     float pitchDepthMult = 8.0f;
 
     std::array<EnvCfg, EnvCount> envs = {
-        EnvCfg{rate(1.f), rate(330.f)},       // amp
-        EnvCfg{rate(10.f), rate(20.f), 8.f},  // pitch
-        EnvCfg{rate(1.f), rate(6.f), .2f},    // click
-        EnvCfg{rate(1.f), rate(6.f), .2f},    // swarm
-        EnvCfg{rate(1.f), rate(6.f), .2f},    // morph
-        EnvCfg{rate(1.f), rate(6.f), .2f},    // filter
+        EnvCfg{rate(1.f), rate(330.f)},         // amp
+        EnvCfg{rate(10.f), rate(20.f), 8.f},    // pitch
+        EnvCfg{rate(1.f), rate(6.f), .2f},      // click
+        EnvCfg{rate(200.f), rate(500.f), 1.f},  // swarm
+        EnvCfg{rate(10.f), rate(200.f), 1.f},   // morph
+        EnvCfg{rate(1.f), rate(60.f), 1.f},     // filter
     };
 
     float outGain = .7f;
-    float gainSlew = 3.0f;
+    // float gainSlew = 3.0f;
     float pan = 0.f;
-
-    float swarmAtt = rate(200.f);
-    float swarmDec = rate(500.f);
-
-    float morphAtt = rate(10.f);
-    float morphDec = rate(200.f);
-    float morphAmt = .8f;
 
     FilterCfg filter;
 
@@ -96,7 +90,7 @@ class CalcisHumilis {
   void tickLED();
 
   // Fill an interleaved stereo block (nFrames = stereo frames)
-  void fillBlock(int32_t *dstLR, size_t nFrames);
+  void fillBlock(OutBuffer &destLR);
 
  private:
   float softClip(float x);
@@ -116,9 +110,6 @@ class CalcisHumilis {
   float currentPan = 0.5f;
 
   Filter filterL, filterR;
-
-  // FIR at OS*SR, then decimate by OS
-  OversampleDecimator<OS, NTAPS> osDecim_;
 
   int trigCounter_ = 0;
 };

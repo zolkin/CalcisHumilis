@@ -17,26 +17,26 @@ float CalcisHumilis<TR>::softClip(float x) {
 
 template <class TR>
 CalcisHumilis<TR>::CalcisHumilis(const Cfg *cfg, Feedback *fb)
-    : cfg_(cfg), fb_(fb) {
-  if constexpr (OS > 1) osDecim_.setup();
-}
+    : cfg_(cfg), fb_(fb) {}
 
 template <class TR>
 void CalcisHumilis<TR>::trigger() {
   envelopes_.triggerAll();
   swarm.reset();
-
-  if constexpr (OS > 1) osDecim_.reset();
 }
 
-static inline float clamp01(float x) {
-  if (x > 1.0f) return 1.0f;
-  if (x < -1.0f) return -1.0f;
-  return x;
+template <size_t N>
+static inline void array_float_to_int32(const std::array<float, N> &src,
+                                        std::array<int32_t, N> &dst) {
+  for (size_t i = 0; i < N; ++i) {
+    float x = src[i] * 2147483647.0f;
+    x = fmaxf(-2147483648.0f, fminf(2147483647.0f, x));
+    dst[i] = (int32_t)x;
+  }
 }
 
 template <class TR>
-void CalcisHumilis<TR>::fillBlock(int32_t *dstLR, size_t nFrames) {
+void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
   if (cfg_->trigCounter > trigCounter_) {
     trigCounter_ = cfg_->trigCounter;
     trigger();
@@ -46,10 +46,11 @@ void CalcisHumilis<TR>::fillBlock(int32_t *dstLR, size_t nFrames) {
   swarm.setConfig(cfg_->swarmOsc);
   envelopes_.setEnvs(cfg_->envs);
 
-  for (size_t i = 0; i < nFrames; ++i) {
-    // Controls advance at base rate (one step per output frame)
+  IntBuffer buffer;
+  for (size_t i = 0; i < TR::BLOCK_FRAMES; ++i) {
     envelopes_.update();
-    float outL = 0.0f, outR = 0.0f;
+
+    // float outL = 0.0f, outR = 0.0f;
 
     // ---------- No oversampling path ----------
     const float a = envelopes_.value(EnvAmp);
@@ -66,31 +67,25 @@ void CalcisHumilis<TR>::fillBlock(int32_t *dstLR, size_t nFrames) {
     const float f = envelopes_.value(EnvFilter);
 
     const float cyclesPerSample = cfg_->cyclesPerSample * (1.f + p);
-    float l = 0.f, r = 0.f;
-    switch (cfg_->oscMode) {
-      case OscSwarm:
-        swarm.tickStereo(cyclesPerSample, sw, m, l, r);
-        break;
-      default:
-        swarm.tickStereo(cyclesPerSample, sw, m, l, r);
-        break;
-    }
+
+    float &l = buffer[2 * i + 0];
+    float &r = buffer[2 * i + 1];
+    l = r = 0.f;
+
+    swarm.tickStereo(cyclesPerSample, sw, m, l, r);
 
     l = filterL.process(l, cfg_->filter);
     r = filterR.process(r, cfg_->filter);
 
     l = softClip(l * a * g);
     r = softClip(r * a * g);
-    outL = l;
-    outR = r;
+  }
 
-    if (cfg_->kPack24In32) {
-      dstLR[2 * i + 0] = (int32_t)lrintf(outL * 8388607.0f) << 8;
-      dstLR[2 * i + 1] = (int32_t)lrintf(outR * 8388607.0f) << 8;
-    } else {
-      dstLR[2 * i + 0] = (int32_t)lrintf(outL * 2147483647.0f);
-      dstLR[2 * i + 1] = (int32_t)lrintf(outR * 2147483647.0f);
-    }
+  if constexpr (TR::BITS == 24) {
+    // dstLR[2 * i + 0] = (int32_t)lrintf(outL * 8388607.0f) << 8;
+    // dstLR[2 * i + 1] = (int32_t)lrintf(outR * 8388607.0f) << 8;
+  } else if constexpr (TR::BITS == 32) {
+    array_float_to_int32(buffer, destLR);
   }
 }
 

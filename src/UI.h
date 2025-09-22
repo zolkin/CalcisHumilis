@@ -8,7 +8,7 @@
 
 #include "AudioTraits.h"
 #include "CalcisHumilis.h"
-#include "HW\ADSPinReader.h"
+#include "hw\ADSPinReader.h"
 #include "MultiInput.h"
 
 // Identify each pot (extend as you add more)
@@ -88,14 +88,15 @@ class UI {
               /*  MIN,  MAX,  RESPONSE     , parameter* */
               {0.01f, 0.99f, PotSpec::RsLin, &sw.pulseWidth}, /* PWM*/
               {0.f, 1.f, PotSpec::RsLin, &sw.morph},          /* morph */
-              {1.f, 1.2599f, PotSpec::RsLin, &sw.detuneMul},  /* Detune */
+              {1.f, 1.05946f, PotSpec::RsLin, &sw.detuneMul}, /* Detune */
               {0.f, 1.f, PotSpec::RsLin, &sw.stereoSpread},   /* Spread */
           },
           true};
       potTabs[TabSrc].pages[2] = ParameterPage{
           {
               /*  MIN,  MAX,  RESPONSE     , parameter* */
-              {1.f, 16.f, PotSpec::RsInt, &sw.voices}, /* PWM*/
+              {1.f, Calcis::MAX_SWARM_VOICES, PotSpec::RsInt,
+               &sw.voices},                            /* PWM*/
               {0.f, 1.f, PotSpec::RsLin, nullptr},     /* morph */
               {1.f, 1.2599f, PotSpec::RsLin, nullptr}, /* Detune */
               {0.f, 1.f, PotSpec::RsLin, nullptr},     /* Spread */

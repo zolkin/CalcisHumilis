@@ -42,11 +42,11 @@ class AudioCore {
   // ---- audio write helper (non-blocking) ----
   void queueNextBlockIfNeeded_() {
     if (bytesLeft_ == 0) {
-      int32_t* buf = (whichBuf_ == 0) ? audioBufA_ : audioBufB_;
+      OutBuffer& buf = (whichBuf_ == 0) ? audioBufA_ : audioBufB_;
       whichBuf_ ^= 1;
-      app_.fillBlock(buf, TR::BLOCK_FRAMES);
+      app_.fillBlock(buf);
 
-      writePtr_ = reinterpret_cast<uint8_t*>(buf);
+      writePtr_ = reinterpret_cast<uint8_t*>(buf.data());
       bytesLeft_ = TR::BLOCK_BYTES;
     }
     if (bytesLeft_) {
@@ -56,9 +56,11 @@ class AudioCore {
     }
   }
 
+  using OutBuffer = typename TR::BufferT;
+
   // double-buffering
-  alignas(8) int32_t audioBufA_[TR::BLOCK_FRAMES * 2];
-  alignas(8) int32_t audioBufB_[TR::BLOCK_FRAMES * 2];
+  alignas(8) OutBuffer audioBufA_;
+  alignas(8) OutBuffer audioBufB_;
 
   I2SStream i2sOut_;
   App app_;

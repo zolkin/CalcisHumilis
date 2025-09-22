@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <math.h>
 
+#include "dsp/Dsp.h"
+
 namespace zlkm {
 // -----------------------------------------------------------------------------
 // DJ-style morphable filter (LP <-> HP) with resonance + drive

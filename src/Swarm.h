@@ -3,13 +3,13 @@
 
 #include <array>
 
-#include "BaseOsc.h"  // zlkm::MorphOscN<N,SR>
+#include "MorphOsc.h"
 
 namespace zlkm {
 
 template <int SR>
 struct SwarmConfig {
-  int voices = 9;             // 1..N
+  int voices = 7;             // 1..N
   float detuneMul = 1.2599f;  // spread per ring (p+-p*c, p+-2*p*c…)
   float stereoSpread = 0.6f;  // 0..1 width
   float gainBase = 0.6f;      // center weight: base^ring
@@ -31,7 +31,9 @@ class SwarmMorph {
 
   void setConfig(const SwarmConfig<SR>& c) {
     cfg_ = c;
-    osc_.pulseWidth.fill(cfg_.pulseWidth);
+    for (int i = 0; i < cfg_.voices; ++i) {
+      osc_.state[i].pulseWidth = cfg_.pulseWidth;
+    }
   }
 
   void reset() {
@@ -48,12 +50,12 @@ class SwarmMorph {
     const float c0 = cyclesPerSample;
 
     for (int i = 0; i < VN; ++i) {
-      osc_.cyclesPerSample[i] =
-          c0 * math::interpolate(1.f, detuneMul_[i], swarmEnv);
-      osc_.morph[i] = math::clamp(cfg_.morph + morphEnv, 0.f, 1.f);
+      osc_.state[i].cyclesPerSample =
+          c0 * detuneMul_[i] * math::interpolate(1.f, detuneMul_[i], swarmEnv);
+      osc_.state[i].morph = cfg_.morph + (1.f - cfg_.morph) * morphEnv;
     }
 
-    osc_.tickFirst(cfg_.voices, tmp_);
+    osc_.tick(tmp_);
 
     float L = 0.f, R = 0.f;
     // per sample (or control-rate), e in [0..1]
@@ -63,6 +65,7 @@ class SwarmMorph {
       L += v * math::interpolate(kEqualPan, panL_[i], swarmEnv);
       R += v * math::interpolate(kEqualPan, panR_[i], swarmEnv);
     }
+
     outL = L;
     outR = R;
   }

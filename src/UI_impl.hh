@@ -119,6 +119,7 @@ void UI::processPot_(int id) {
       filterParams_.setDrive01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       spec.setCfgValue(filterParams_.cfg());
+      break;
     case PotSpec::RsInt: {
       int val = int(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       Log.infoln("Setting RsInt to %d", val);
