@@ -5,6 +5,21 @@
 #include "dsp/Dsp.h"
 
 namespace zlkm {
+
+// ------- Safe, UI-side param gate (0..1 inputs) -------
+struct DJFilterLimitsDefault {
+  static constexpr float kAlpha = 0.8f;   // base top-end vs Nyquist
+  static constexpr float kGamma = 0.72f;  // how much max cutoff shrinks with Q
+  static constexpr float kQmin = 0.707f;  // "no resonance" ≈ Butterworth
+  static constexpr float kQmax = 10.0f;   // musical max Q
+  static constexpr float kCurve = 2.0f;   // res 0..1 -> Q perceptual curve
+  static constexpr float kMinHz = 20.0f;  // practical low cutoff
+  static constexpr float kHardTopHz =
+      16000.f;  // optional hard cap (<=0 disables)
+  static constexpr float kTrimStrength = 0.7f;  // auto-trim vs Q (0..~1.5)
+  static constexpr float kDriveMax = 14.0f;     // UI drive top; UI min is unity
+};
+
 // -----------------------------------------------------------------------------
 // DJ-style morphable filter (LP <-> HP) with resonance + drive
 // TPT SVF core (stable at high Q), zero checks/clamps in the audio path.
@@ -14,10 +29,14 @@ template <int SR>
 class DJFilterTPT {
  public:
   struct Cfg {
-    float gCut = dsp::hzToGCut<SR>(7000.f);
+    float gCut = dsp::hzToGCut<SR>(DJFilterLimitsDefault::kHardTopHz);
     float kDamp = dsp::res01ToKDamp_smooth(0.f);
     float morph = 0.f;
-    float drive = 0.f;
+    float drive = 1.f;
+
+    std::array<float, 4> const& asTarget() const {
+      return *reinterpret_cast<std::array<float, 4> const*>(this);
+    }
   };
 
   void reset(float low = 0.0f, float band = 0.0f) {
@@ -51,20 +70,6 @@ class DJFilterTPT {
  private:
   float ic1eq_ = 0.0f;  // "integrator capacitor" 1 (≈ band state)
   float ic2eq_ = 0.0f;  // "integrator capacitor" 2 (≈ low state)
-};
-
-// ------- Safe, UI-side param gate (0..1 inputs) -------
-struct DJFilterLimitsDefault {
-  static constexpr float kAlpha = 0.8f;   // base top-end vs Nyquist
-  static constexpr float kGamma = 0.3f;   // how much max cutoff shrinks with Q
-  static constexpr float kQmin = 0.707f;  // "no resonance" ≈ Butterworth
-  static constexpr float kQmax = 12.0f;   // musical max Q
-  static constexpr float kCurve = 2.0f;   // res 0..1 -> Q perceptual curve
-  static constexpr float kMinHz = 20.0f;  // practical low cutoff
-  static constexpr float kHardTopHz =
-      16000.f;  // optional hard cap (<=0 disables)
-  static constexpr float kTrimStrength = 0.7f;  // auto-trim vs Q (0..~1.5)
-  static constexpr float kDriveMax = 16.0f;     // UI drive top; UI min is unity
 };
 
 // Forward-declare your filter type so we can return its Cfg
@@ -102,39 +107,27 @@ class SafeFilterParams {
 
     // Cutoff max allowed by that Q; map cutoff01 into [kMinHz..fcap]
     const float fcap = fMaxFromQ(Qt);
-    cutoffHz_ = Limits::kMinHz + cutoff01_ * (fcap - Limits::kMinHz);
+    float cutoffHz = Limits::kMinHz + cutoff01_ * (fcap - Limits::kMinHz);
 
     // Given cutoff, cap Q if needed; reflect clamp back to res01 domain
-    const float Qcap = QmaxFromHz(cutoffHz_);
+    const float Qcap = QmaxFromHz(cutoffHz);
     if (Qt > Qcap) {
       Qt = Qcap;
       res01_ = res01FromQ(Qt);
     }
-    Q_ = clampf(Qt, Limits::kQmin, Limits::kQmax);
+    float Q = clampf(Qt, Limits::kQmin, Limits::kQmax);
 
     // Derived audio scalars
-    gCut_ = tanf(float(M_PI) * cutoffHz_ / kSR);
-    kDamp_ = 2.f / Q_;
+    cfg.gCut = tanf(float(M_PI) * cutoffHz / kSR);
+    cfg.kDamp = 2.f / Q;
 
     // Drive: UI 0..1 -> [1..kDriveMax], then auto-trim vs Q (may dip below 1)
     const float driveUI = 1.f + drive01_ * (Limits::kDriveMax - 1.f);
-    const float trim = 1.f / (1.f + Limits::kTrimStrength * (Q_ - 1.f));
-    driveOut_ = driveUI * trim;
+    const float trim = 1.f / (1.f + Limits::kTrimStrength * (Q - 1.f));
+    cfg.drive = driveUI * trim;
   }
 
-  // --- single getter producing a ready-to-use filter Cfg ---
-  typename DJFilterTPT<SR>::Cfg cfg() const {
-    typename DJFilterTPT<SR>::Cfg c;
-    c.gCut = gCut_;
-    c.kDamp = kDamp_;
-    c.morph = morph01_;   // already 0..1; shape elsewhere if you want
-    c.drive = driveOut_;  // UI drive * auto-trim
-    return c;
-  }
-
-  // (Optional) introspection
-  float cutoffHz() const { return cutoffHz_; }
-  float Q() const { return Q_; }
+  typename DJFilterTPT<SR>::Cfg cfg;
 
  private:
   // --- helpers ---
@@ -171,10 +164,6 @@ class SafeFilterParams {
 
   // --- stored normals (0..1) ---
   float cutoff01_ = 0.f, res01_ = 0.f, drive01_ = 0.f, morph01_ = 0.f;
-
-  // --- derived state for audio ---
-  float cutoffHz_ = 1000.f, Q_ = Limits::kQmin;
-  float gCut_ = 0.f, kDamp_ = 2.f / Limits::kQmin, driveOut_ = 1.f;
 };
 
 }  // namespace zlkm

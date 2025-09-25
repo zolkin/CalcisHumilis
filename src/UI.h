@@ -8,8 +8,8 @@
 
 #include "AudioTraits.h"
 #include "CalcisHumilis.h"
-#include "hw\ADSPinReader.h"
 #include "MultiInput.h"
+#include "hw\ADSPinReader.h"
 
 // Identify each pot (extend as you add more)
 namespace zlkm {
@@ -27,7 +27,8 @@ struct PotSpec {
     RsKDamp,
     RsMorph,
     RsDrive,
-    RsInt
+    RsInt,
+    RsBool
   };
 
   // Mapping
@@ -96,10 +97,10 @@ class UI {
           {
               /*  MIN,  MAX,  RESPONSE     , parameter* */
               {1.f, Calcis::MAX_SWARM_VOICES, PotSpec::RsInt,
-               &sw.voices},                            /* PWM*/
-              {0.f, 1.f, PotSpec::RsLin, nullptr},     /* morph */
-              {1.f, 1.2599f, PotSpec::RsLin, nullptr}, /* Detune */
-              {0.f, 1.f, PotSpec::RsLin, nullptr},     /* Spread */
+               &sw.voices},                                 /* PWM*/
+              {0.f, 1.f, PotSpec::RsInt, &sw.morphMode},    /* morphMode */
+              {0.f, 1.f, PotSpec::RsBool, &sw.randomPhase}, /* randomPhase */
+              {0.f, 1.f, PotSpec::RsLin, nullptr},          /* Spread */
           },
           true};
 

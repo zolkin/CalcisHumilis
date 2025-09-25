@@ -13,10 +13,13 @@ namespace zlkm {
 // -------- MORPH SINE->TRIANGLE->SQUARE->SAW --------
 template <int N, int SR>
 class MorphOscN {
+ public:
   // Segment bounds
+  static constexpr float SEGMENT_COUNT = 3.f;
+  static constexpr float WAVE_COUNT = 4.f;
   static constexpr float SINE_BOUND = 0.0f;
-  static constexpr float TRIANGLE_BOUND = 1.0f / 3.0f;
-  static constexpr float SQUARE_BOUND = 2.0f / 3.0f;
+  static constexpr float TRIANGLE_BOUND = 1.0f / SEGMENT_COUNT;
+  static constexpr float SQUARE_BOUND = 2.0f / SEGMENT_COUNT;
   static constexpr float SAW_BOUND = 1.0f;
 
   static constexpr float INV_SINE_TRI_LEN = 1.f / (TRIANGLE_BOUND - SINE_BOUND);
@@ -83,8 +86,81 @@ class MorphOscN {
     return saw;
   }
 
- public:
+  float tickMorph(int i) {
+    State& s = state[i];
+
+    // Start with shared carry, once per sample
+    float sample = s.blep.apply();
+
+    const float dt = s.cyclesPerSample;  // s.phaseInc;
+    const float sum = s.phase + dt;
+    const float overshoot = sum - 1.0f;
+    const float pw = s.pulseWidth;
+
+    const int seg = (int)(s.morph * SEGMENT_COUNT);
+
+    switch (seg) {
+      case 0: {
+        const float wB = (s.morph - SINE_BOUND) * INV_SINE_TRI_LEN;
+        const float wA = 1.0f - wB;
+        sample += wA * sine_naive(s.phase) + wB * triangle_naive(s.phase);
+      } break;
+      case 1: {
+        const float wB = (s.morph - TRIANGLE_BOUND) * INV_TRI_SQ_LEN;
+        const float wA = 1.0f - wB;
+        const float s_tri = (wA > 0.0f) ? triangle_naive(s.phase) : 0.0f;
+        const float s_sq = square_blep(s, s.phase, dt, overshoot, pw, wB);
+        sample += wA * s_tri + wB * s_sq;
+      } break;
+      default: {
+        const float wB = (s.morph - SQUARE_BOUND) * INV_SQ_SAW_LEN;
+        const float wA = 1.0f - wB;
+        const float s_sq = square_blep(s, s.phase, dt, overshoot, pw, wA);
+        const float s_saw = saw_blep(s, s.phase, dt, overshoot, wB);
+        sample += wA * s_sq + wB * s_saw;
+      } break;
+    }
+    s.phase = sum - (float)(overshoot > 0.f);
+    return sample;
+  }
+
+  // useful to debug just the waveforms
+  float ticSwitch(int i) {
+    State& s = state[i];
+
+    // Start with shared carry, once per sample
+    float sample = s.blep.apply();
+
+    const float dt = s.cyclesPerSample;  // s.phaseInc;
+    const float sum = s.phase + dt;
+    const float overshoot = sum - 1.0f;
+    const float pw = s.pulseWidth;
+
+    const int seg = (int)(s.morph * WAVE_COUNT);
+
+    switch (seg) {
+      case 0: {
+        sample += sine_naive(s.phase);
+      } break;
+      case 1:
+        sample += triangle_naive(s.phase);
+        break;
+      case 2:
+        sample += square_blep(s, s.phase, dt, overshoot, pw, 1.f);
+        break;
+      default:
+        sample += saw_blep(s, s.phase, dt, overshoot, 1.f);
+        break;
+    }
+    s.phase = sum - (float)(overshoot > 0.f);
+    return sample;
+  }
+
+  enum Mode { ModeMorph = 0, ModeSwitch };
+
   std::array<State, N> state = {};  // per-voice state
+
+  Mode mode;
 
   // Call on trigger/note-on; latches pan & resets phase
   void reset(const bool randomPhase = false) {
@@ -95,45 +171,14 @@ class MorphOscN {
 
   inline void tick(std::array<float, N>& out) {
     for (int i = 0; i < N; ++i) {
-      State& s = state[i];
-      const float t0 = s.phase;
-      const float dt = s.cyclesPerSample;  // s.phaseInc;
-      const float sum = t0 + dt;
-      const float overshoot = sum - 1.0f;
-      const float pw = s.pulseWidth;
-      const float m = s.morph;
-
-      // Start with shared carry, once per sample
-      float y = s.blep.apply();
-      int seg = (int)(s.morph * 3.0f);
-
-      switch (seg) {
-        case 0: {
-          const float wB = (m - SINE_BOUND) * INV_SINE_TRI_LEN;
-          const float wA = 1.0f - wB;
-          y += wA * sine_naive(t0) + wB * triangle_naive(t0);
-        } break;
-        case 1: {
-          const float wB = (m - TRIANGLE_BOUND) * INV_TRI_SQ_LEN;
-          const float wA = 1.0f - wB;
-          const float s_tri = (wA > 0.0f) ? triangle_naive(t0) : 0.0f;
-          const float s_sq = square_blep(s, t0, dt, overshoot, pw, wB);
-          y += wA * s_tri + wB * s_sq;
-        } break;
-        default: {
-          const float wB = (m - SQUARE_BOUND) * INV_SQ_SAW_LEN;
-          const float wA = 1.0f - wB;
-          const float s_sq = square_blep(s, t0, dt, overshoot, pw, wA);
-          const float s_saw = saw_blep(s, t0, dt, overshoot, wB);
-          y += wA * s_sq + wB * s_saw;
-        }
+      switch (mode) {
+        case ModeSwitch:
+          out[i] = ticSwitch(i);
+          break;
+        default:
+          out[i] = tickMorph(i);
+          break;
       }
-
-      out[i] = y;
-
-      const float mask = (float)(overshoot > 0.f);  // 0.0 or 1.0
-      s.phase = sum - mask;
-      ;
     }
   }
 };

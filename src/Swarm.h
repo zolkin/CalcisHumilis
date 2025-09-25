@@ -9,13 +9,24 @@ namespace zlkm {
 
 template <int SR>
 struct SwarmConfig {
-  int voices = 7;             // 1..N
+  // Some dirty tricks here!!
+  static constexpr int INTERPOLATABLE_PARAMS = 5;
+  float* i_begin() { return &detuneMul; }
+  std::array<float, INTERPOLATABLE_PARAMS> const& asTarget() const {
+    return *reinterpret_cast<std::array<float, INTERPOLATABLE_PARAMS> const*>(
+        &detuneMul);
+  }
+
   float detuneMul = 1.2599f;  // spread per ring (p+-p*c, p+-2*p*c…)
   float stereoSpread = 0.6f;  // 0..1 width
   float gainBase = 0.6f;      // center weight: base^ring
-  bool randomPhase = true;    // randomize start phase
   float morph = 0.166666f;    // 0=sine..1=saw morph
   float pulseWidth = 0.4f;    // square duty cycle
+
+  // Set immediately
+  int voices = 7;        // 1..N
+  int morphMode;         // 0 -> Morph, 1 -> Switch between waveforms (debug)
+  bool randomPhase = 1;  // randomize start phase, int
 };
 
 // ---------------- Swarm ----------------
@@ -25,12 +36,11 @@ class SwarmMorph {
   static constexpr float INV_SR_F = 1.f / float(SR);
 
  public:
-  explicit SwarmMorph(const SwarmConfig<SR>& c = SwarmConfig<SR>()) {
-    setConfig(c);
+  explicit SwarmMorph(const SwarmConfig<SR>& c = SwarmConfig<SR>()) : cfg_(c) {
+    cfgUpdated();
   }
 
-  void setConfig(const SwarmConfig<SR>& c) {
-    cfg_ = c;
+  void cfgUpdated() {
     for (int i = 0; i < cfg_.voices; ++i) {
       osc_.state[i].pulseWidth = cfg_.pulseWidth;
     }
@@ -48,6 +58,7 @@ class SwarmMorph {
                          const float morphEnv, float& outL, float& outR) {
     const int VN = cfg_.voices;
     const float c0 = cyclesPerSample;
+    osc_.mode = (typename MorphOsc::Mode)cfg_.morphMode;
 
     for (int i = 0; i < VN; ++i) {
       osc_.state[i].cyclesPerSample =
@@ -138,8 +149,9 @@ class SwarmMorph {
   }
 
  private:
+  using MorphOsc = zlkm::MorphOscN<N, SR>;
   SwarmConfig<SR> cfg_;
-  zlkm::MorphOscN<N, SR> osc_;
+  MorphOsc osc_;
 
   std::array<float, N> tmp_{};
   std::array<float, N> detuneMul_{};

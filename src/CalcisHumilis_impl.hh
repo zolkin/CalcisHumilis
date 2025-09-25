@@ -2,6 +2,7 @@
 #include <math.h>
 
 #include "CalcisHumilis.h"
+#include "dsp/BlockInterpolator.h"
 
 namespace zlkm {
 
@@ -17,7 +18,10 @@ float CalcisHumilis<TR>::softClip(float x) {
 
 template <class TR>
 CalcisHumilis<TR>::CalcisHumilis(const Cfg *cfg, Feedback *fb)
-    : cfg_(cfg), fb_(fb) {}
+    : cfg_(cfg),
+      fb_(fb),
+      outGain_(cfg_->outGain),
+      cyclesPerSample_(cfg_->cyclesPerSample) {}
 
 template <class TR>
 void CalcisHumilis<TR>::trigger() {
@@ -37,20 +41,31 @@ static inline void array_float_to_int32(const std::array<float, N> &src,
 
 template <class TR>
 void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
+  using namespace dsp;
   if (cfg_->trigCounter > trigCounter_) {
     trigCounter_ = cfg_->trigCounter;
     trigger();
   }
-
-  const float g = cfg_->outGain;
-  swarm.setConfig(cfg_->swarmOsc);
   envelopes_.setEnvs(cfg_->envs);
+
+  auto swarmCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 5>(
+      swarm.cfg().i_begin(), cfg_->swarmOsc.asTarget());
+
+  auto calcisCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 2>(
+      &outGain_, {cfg_->outGain, cfg_->cyclesPerSample});
+
+  auto filterCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 4>(
+      &fCfg_.gCut, cfg_->filter.asTarget());
 
   IntBuffer buffer;
   for (size_t i = 0; i < TR::BLOCK_FRAMES; ++i) {
     envelopes_.update();
+    swarmCfgItp.update();
+    calcisCfgItp.update();
+    filterCfgItp.update();
+    swarm.cfgUpdated();
 
-    // float outL = 0.0f, outR = 0.0f;
+    const float g = outGain_;
 
     // ---------- No oversampling path ----------
     const float a = envelopes_.value(EnvAmp);
@@ -66,16 +81,14 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
     const float m = envelopes_.value(EnvMorph);
     const float f = envelopes_.value(EnvFilter);
 
-    const float cyclesPerSample = cfg_->cyclesPerSample * (1.f + p);
-
     float &l = buffer[2 * i + 0];
     float &r = buffer[2 * i + 1];
     l = r = 0.f;
 
-    swarm.tickStereo(cyclesPerSample, sw, m, l, r);
+    swarm.tickStereo(cyclesPerSample_ * (1.f + p), sw, m, l, r);
 
-    l = filterL.process(l, cfg_->filter);
-    r = filterR.process(r, cfg_->filter);
+    l = filterL.process(l, fCfg_);
+    r = filterR.process(r, fCfg_);
 
     l = softClip(l * a * g);
     r = softClip(r * a * g);

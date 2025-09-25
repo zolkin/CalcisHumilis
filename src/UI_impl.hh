@@ -102,27 +102,32 @@ void UI::processPot_(int id) {
     case PotSpec::RsGCut:
       filterParams_.setCutoff01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-      spec.setCfgValue(filterParams_.cfg());
+      spec.setCfgValue(filterParams_.cfg);
       break;
     case PotSpec::RsKDamp:
       filterParams_.setRes01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-      spec.setCfgValue(filterParams_.cfg());
+      spec.setCfgValue(filterParams_.cfg);
       break;
     case PotSpec::RsMorph:
       filterParams_.setMorph01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-      spec.setCfgValue(filterParams_.cfg());
+      spec.setCfgValue(filterParams_.cfg);
       break;
 
     case PotSpec::RsDrive:
       filterParams_.setDrive01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-      spec.setCfgValue(filterParams_.cfg());
+      spec.setCfgValue(filterParams_.cfg);
       break;
     case PotSpec::RsInt: {
       int val = int(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       Log.infoln("Setting RsInt to %d", val);
+      spec.setCfgValue(val);
+    } break;
+    case PotSpec::RsBool: {
+      bool val = bool(int(mapLin_(raw, kAdcMaxCode, 0.f, 1.f)));
+      Log.infoln("Setting RsBool to %d", val);
       spec.setCfgValue(val);
     } break;
     default:

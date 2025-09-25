@@ -9,7 +9,6 @@
 
 #include "ADEnvelopes.h"
 #include "DJFilter.h"
-#include "FirOversample.h"  // the helper above
 #include "MorphOsc.h"
 #include "Swarm.h"
 
@@ -57,8 +56,8 @@ class CalcisHumilis {
 
     SwarmConfig<SR * OS> swarmOsc;
 
+    float outGain = .7f;
     float cyclesPerSample = cycles(65.f);
-    float pitchDepthMult = 8.0f;
 
     std::array<EnvCfg, EnvCount> envs = {
         EnvCfg{rate(1.f), rate(330.f)},         // amp
@@ -68,10 +67,6 @@ class CalcisHumilis {
         EnvCfg{rate(10.f), rate(200.f), 1.f},   // morph
         EnvCfg{rate(1.f), rate(60.f), 1.f},     // filter
     };
-
-    float outGain = .7f;
-    // float gainSlew = 3.0f;
-    float pan = 0.f;
 
     FilterCfg filter;
 
@@ -104,8 +99,12 @@ class CalcisHumilis {
 
   Envelopes envelopes_;
 
+  float outGain_;
+  float cyclesPerSample_;
+
   // Oscillators run at OS*SR so their phase math sees true step size
   SwarmMorph<MAX_SWARM_VOICES, SR * OS> swarm;
+  FilterCfg fCfg_;
 
   float currentPan = 0.5f;
 
