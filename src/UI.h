@@ -157,13 +157,6 @@ class UI {
         3.3f                  /* vrefVolts */
     };
 
-    // ClcisPots::Cfg potsCfg = {
-    //     {0, 1, 2, 3}, /* channels */
-    //     4095,         /* maxCode */
-    //     0.2f,         /* emalAlpha */
-    //     32.f,         /* activityLSB */
-    // };
-
     std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 6};
     float encClkDiv = 50.0f;  // ~40 kHz sample
 

@@ -13,8 +13,6 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
       fb_(fb),
       trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true),
       encs_(pio0, ucfg_.encPinsA, ucfg_.encClkDiv) {
-  // adsPinReader_(ucfg_.readerCfg),
-  // multiInput_(adsPinReader_, ucfg_.potsCfg) {
   initTabs_();
   seedRawFromCfg_();
 
