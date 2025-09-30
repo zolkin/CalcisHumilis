@@ -12,14 +12,24 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
     : ucfg_(cfg),
       fb_(fb),
       trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true),
-      adsPinReader_(ucfg_.readerCfg),
-      multiInput_(adsPinReader_, ucfg_.potsCfg) {
-  initTabs_();  // NEW
+      encs_(pio0, ucfg_.encPinsA, ucfg_.encClkDiv) {
+  // adsPinReader_(ucfg_.readerCfg),
+  // multiInput_(adsPinReader_, ucfg_.potsCfg) {
+  initTabs_();
+  seedRawFromCfg_();
+
+  resetEncoderBaselines_();
 
   trigBtn_.attachPress(UI::onPress_, this);
   trigBtn_.setDebounceMs(5);
 
   Log.notice(F("[UI] ready" CR));
+}
+
+void UI::resetEncoderBaselines_() {
+  for (size_t i = 0; i < encLast_.size(); ++i) {
+    encLast_[i] = encs_.read(static_cast<int>(i));
+  }
 }
 
 void UI::tickLED() {
@@ -78,54 +88,54 @@ inline float potToRate(int raw, int rawMax, float msMin, float msMax,
 }
 
 // ---------- process one pot ----------
-void UI::processPot_(int id) {
-  const PotSpec& spec = getPotSpec(id);
+void UI::processRotary_(int id) {
+  const RotaryInputSpec& spec = getRotaryInputSpec(id);
   if (spec.cfgValue == nullptr) {
     return;
   }
 
-  int raw = multiInput_.value(id);  // 0..4095
+  int raw = tabs_[currentTab_].pages[tabs_[currentTab_].currentPage].rawPos[id];
 
-  Log.infoln("POT[%d] value = %d", id, raw);
+  Log.infoln("ENC[%d] value = %d", id, raw);
 
   switch (spec.response) {
-    case PotSpec::RsLin:
+    case RotaryInputSpec::RsLin:
       spec.setCfgValue(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       break;
-    case PotSpec::RsExp:
+    case RotaryInputSpec::RsExp:
       spec.setCfgValue(mapExp_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       break;
-    case PotSpec::RsRate:
+    case RotaryInputSpec::RsRate:
       spec.setCfgValue(
           potToRate(raw, kAdcMaxCode, spec.outMin, spec.outMax, CalcisTR::SR));
       break;
-    case PotSpec::RsGCut:
+    case RotaryInputSpec::RsGCut:
       filterParams_.setCutoff01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       spec.setCfgValue(filterParams_.cfg);
       break;
-    case PotSpec::RsKDamp:
+    case RotaryInputSpec::RsKDamp:
       filterParams_.setRes01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       spec.setCfgValue(filterParams_.cfg);
       break;
-    case PotSpec::RsMorph:
+    case RotaryInputSpec::RsMorph:
       filterParams_.setMorph01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       spec.setCfgValue(filterParams_.cfg);
       break;
 
-    case PotSpec::RsDrive:
+    case RotaryInputSpec::RsDrive:
       filterParams_.setDrive01(
           mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       spec.setCfgValue(filterParams_.cfg);
       break;
-    case PotSpec::RsInt: {
+    case RotaryInputSpec::RsInt: {
       int val = int(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
       Log.infoln("Setting RsInt to %d", val);
       spec.setCfgValue(val);
     } break;
-    case PotSpec::RsBool: {
+    case RotaryInputSpec::RsBool: {
       bool val = bool(int(mapLin_(raw, kAdcMaxCode, 0.f, 1.f)));
       Log.infoln("Setting RsBool to %d", val);
       spec.setCfgValue(val);
@@ -157,7 +167,7 @@ void UI::initTabs_() {
 
   // Start on Tab 0
   currentTab_ = 0;
-  for (int i = 0; i < kNumTabs; ++i) currentPage_[i] = 0;
+  for (auto& t : tabs_) t.currentPage = 0;
   updateLeds_();
 }
 
@@ -173,10 +183,21 @@ void UI::update() {
   tPrev_ = now;
 
   // Only enabled tabs processes pots (unchanged behavior)
-  if (ucfg_.potTabs[currentTab_].enabled && multiInput_.update()) {
-    for (int i = 0; i < ParameterPage::POT_COUNT; ++i) {
-      if (multiInput_.valueChanged(i)) {
-        processPot_(i);
+  if (ucfg_.rotaryTabs[currentTab_].enabled) {
+    encs_.update();  // drain PIO FIFOs
+    auto& ts = tabs_[currentTab_];
+    const uint8_t pg = ts.currentPage;
+    for (int i = 0; i < ParameterPage::ROTARY_COUNT; ++i) {
+      const int32_t nowCnt = encs_.read(i);
+      int32_t d = nowCnt - encLast_[i];
+      if (d != 0) {
+        encLast_[i] = nowCnt;
+        int deltaRaw = deltaRawFromEnc_(this, i, d);
+        int& raw = ts.pages[pg].rawPos[i];
+        raw += deltaRaw;
+        if (raw < 0) raw = 0;
+        if (raw > kAdcMaxCode) raw = kAdcMaxCode;
+        processRotary_(i);
       }
     }
   }
@@ -212,8 +233,9 @@ void UI::selectTab_(uint8_t tab) {
       tab;  // (typo: remove 'self->' if pasting—should be just currentTab_)
   uint8_t pc = ucfg_.tabPageCount[currentTab_];
   if (pc == 0) pc = 1;
-  if (currentPage_[currentTab_] >= pc) currentPage_[currentTab_] = 0;
+  if (tabs_[currentTab_].currentPage >= pc) tabs_[currentTab_].currentPage = 0;
   updateLeds_();
+  resetEncoderBaselines_();
 }
 
 void UI::advancePage_() {
@@ -222,9 +244,11 @@ void UI::advancePage_() {
     blinkLed_(currentTab_, 1);
     return;
   }
-  currentPage_[currentTab_] = (currentPage_[currentTab_] + 1) % pc;
-  blinkLed_(currentTab_, currentPage_[currentTab_] + 1);
+  auto& ts = tabs_[currentTab_];
+  ts.currentPage = (ts.currentPage + 1) % pc;
+  blinkLed_(currentTab_, ts.currentPage + 1);
   updateLeds_();
+  resetEncoderBaselines_();
 }
 
 void UI::updateLeds_() {
@@ -244,6 +268,106 @@ void UI::blinkLed_(uint8_t tab, uint8_t count) {
     delay(100);
   }
   if (tab == currentTab_) digitalWrite(pin, HIGH);
+}
+
+// inverse of mapLin_ to raw (ignores sticky-ends during seeding on purpose)
+static inline int inv_toRaw_Lin_(float value, float outMin, float outMax) {
+  if (outMax == outMin) return 0;
+  float t = (value - outMin) / (outMax - outMin);  // 0..1
+  t = math::clamp01(t);
+  return int(lroundf(t * kAdcMaxCode));
+}
+
+// inverse of mapExp_ (common case with gamma=1.6, positive ranges)
+static inline int inv_toRaw_Exp_(float value, float outMin, float outMax,
+                                 bool invert = false) {
+  if (outMax == outMin) return 0;
+  float t = (value - outMin) / (outMax - outMin);  // target shaped 0..1
+  t = math::clamp01(t);
+  if (invert) t = 1.f - t;
+  // forward used y = pow(x, 1.6); so inverse is x = pow(y, 1/1.6)
+  constexpr float kInvGamma = 1.f / 1.6f;
+  float x = powf(t, kInvGamma);
+  x = math::clamp01(x);
+  return int(lroundf(x * kAdcMaxCode));
+}
+
+// inverse of RsRate mapping (ms linear mapped then ms->rate)
+// forward: rate = 1000 / (SR * ms), with ms in [msMin..msMax]
+static inline int inv_toRaw_Rate_(float rate, float msMin, float msMax,
+                                  float SR) {
+  if (rate <= 0.f || msMax == msMin) return 0;
+  float ms = 1000.f / (SR * rate);
+  float t = (ms - msMin) / (msMax - msMin);
+  t = math::clamp01(t);
+  return int(lroundf(t * kAdcMaxCode));
+}
+
+void UI::seedRawFromCfg_() {
+  // For each tab/page/control that has a cfgValue, read current value and
+  // compute a 0..4095 "raw" that your existing mapping will reproduce.
+  for (uint8_t tab = 0; tab < kNumTabs; ++tab) {
+    if (!ucfg_.rotaryTabs[tab].enabled) continue;
+
+    const uint8_t pageCount =
+        (ucfg_.tabPageCount[tab] == 0) ? 1 : ucfg_.tabPageCount[tab];
+    for (uint8_t pg = 0; pg < pageCount && pg < ParameterTab::MAX_PAGE; ++pg) {
+      auto& page = ucfg_.rotaryTabs[tab].pages[pg];
+      if (!page.enabled) continue;
+
+      for (int i = 0; i < ParameterPage::ROTARY_COUNT; ++i) {
+        const RotaryInputSpec& spec = page.rotary[i];
+        if (!spec.cfgValue) continue;
+
+        int seededRaw = 0;
+
+        switch (spec.response) {
+          case RotaryInputSpec::RsLin: {
+            float v = *reinterpret_cast<float*>(spec.cfgValue);
+            seededRaw = inv_toRaw_Lin_(v, spec.outMin, spec.outMax);
+          } break;
+
+          case RotaryInputSpec::RsExp: {
+            float v = *reinterpret_cast<float*>(spec.cfgValue);
+            seededRaw =
+                inv_toRaw_Exp_(v, spec.outMin, spec.outMax, /*invert=*/false);
+          } break;
+
+          case RotaryInputSpec::RsRate: {
+            float rate =
+                *reinterpret_cast<float*>(spec.cfgValue);  // current rate
+            seededRaw =
+                inv_toRaw_Rate_(rate, spec.outMin, spec.outMax, CalcisTR::SR);
+          } break;
+
+          case RotaryInputSpec::RsInt: {
+            int v = *reinterpret_cast<int*>(spec.cfgValue);
+            // treat as linear in [outMin..outMax]
+            seededRaw =
+                inv_toRaw_Lin_(static_cast<float>(v), spec.outMin, spec.outMax);
+          } break;
+
+          case RotaryInputSpec::RsBool: {
+            bool v = *reinterpret_cast<bool*>(spec.cfgValue);
+            seededRaw = v ? kAdcMaxCode : 0;
+          } break;
+
+          case RotaryInputSpec::RsGCut:
+          case RotaryInputSpec::RsKDamp:
+          case RotaryInputSpec::RsMorph:
+          case RotaryInputSpec::RsDrive:
+          default: {
+            // Without a public getter for normalized 0..1 from filter cfg,
+            // seed to middle to avoid surprises. If you expose getters later,
+            // we can compute exact raw here.
+            seededRaw = kAdcMaxCode / 2;
+          } break;
+        }
+
+        tabs_[tab].pages[pg].rawPos[i] = seededRaw;
+      }  // pot
+    }  // page
+  }  // tab
 }
 
 }  // namespace zlkm

@@ -9,6 +9,7 @@
 #include "AudioTraits.h"
 #include "CalcisHumilis.h"
 #include "MultiInput.h"
+#include "hw/pico/QuadManagerPio.h"
 #include "hw\ADSPinReader.h"
 
 // Identify each pot (extend as you add more)
@@ -18,8 +19,8 @@ using CalcisTR = AudioTraits<48000, 1, 32, 64>;
 using Calcis = CalcisHumilis<CalcisTR>;
 using ClcisPots = MultiInput<hw::ADS1015Reader>;
 
-struct PotSpec {
-  enum PotResponse {
+struct RotaryInputSpec {
+  enum Response {
     RsLin,
     RsExp,
     RsRate,
@@ -35,9 +36,16 @@ struct PotSpec {
   float outMin = 0.0f;
   float outMax = 1.0f;
 
-  PotResponse response = RsLin;
+  Response response = RsLin;
 
   void* cfgValue = nullptr;
+
+  // 0 = use default (two turns). Otherwise, e.g. 96, 192, 384…
+  int encSpanCounts = 0;
+  // optional starting offset in counts (applied before wrap)
+  int encOffset = 0;
+  bool encWrap = false;    // true: wrap within span; false: clamp 0..span
+  bool encInvert = false;  // per-control direction flip
 
   template <class T>
   inline void setCfgValue(T value) const {
@@ -46,11 +54,13 @@ struct PotSpec {
 };
 
 struct ParameterPage {
-  static constexpr int POT_COUNT = 4;
+  static constexpr int ROTARY_COUNT = 4;
 
-  PotSpec pots[POT_COUNT];
+  RotaryInputSpec rotary[ROTARY_COUNT];
   bool enabled = false;
 };
+
+using ClcisEncs = hw::QuadManagerPIO<ParameterPage::ROTARY_COUNT>;
 
 struct ParameterTab {
   static constexpr int MAX_PAGE = 4;
@@ -71,62 +81,64 @@ class UI {
 
     Cfg(const Cfg&) = delete;
     Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
-      potTabs[TabSrc].enabled = true;
-      potTabs[TabSrc].pages[0] = ParameterPage{
+      rotaryTabs[TabSrc].enabled = true;
+      rotaryTabs[TabSrc].pages[0] = ParameterPage{
           {
               /*  MIN,   MAX, INV,  RESPONSE, parameter* */
-              {cyc(65.f), cyc(260.f), PotSpec::RsLin,
+              {cyc(65.f), cyc(260.f), RotaryInputSpec::RsLin,
                &pCfg->cyclesPerSample}, /* Pitch */
-              {20.f, 2000.f, PotSpec::RsRate, &env(CH::EnvAmp).decay}, /* Dec */
-              {2.f, 80.f, PotSpec::RsRate, &env(CH::EnvPitch).decay},  /* PDec*/
-              {0.f, 1.f, PotSpec::RsLin, &pCfg->outGain},              /* Gain*/
+              {20.f, 2000.f, RotaryInputSpec::RsRate,
+               &env(CH::EnvAmp).decay}, /* Dec */
+              {2.f, 80.f, RotaryInputSpec::RsRate,
+               &env(CH::EnvPitch).decay},                         /* PDec*/
+              {0.f, 1.f, RotaryInputSpec::RsLin, &pCfg->outGain}, /* Gain*/
           },
           true};
 
       auto& sw = pCfg->swarmOsc;
-      potTabs[TabSrc].pages[1] = ParameterPage{
+      rotaryTabs[TabSrc].pages[1] = ParameterPage{
           {
               /*  MIN,  MAX,  RESPONSE     , parameter* */
-              {0.01f, 0.99f, PotSpec::RsLin, &sw.pulseWidth}, /* PWM*/
-              {0.f, 1.f, PotSpec::RsLin, &sw.morph},          /* morph */
-              {1.f, 1.05946f, PotSpec::RsLin, &sw.detuneMul}, /* Detune */
-              {0.f, 1.f, PotSpec::RsLin, &sw.stereoSpread},   /* Spread */
+              {0.01f, 0.99f, RotaryInputSpec::RsLin, &sw.pulseWidth}, /* PWM*/
+              {0.f, 1.f, RotaryInputSpec::RsLin, &sw.morph}, /* morph */
+              {1.f, 1.05946f, RotaryInputSpec::RsLin,
+               &sw.detuneMul},                                      /* Detune */
+              {0.f, 1.f, RotaryInputSpec::RsLin, &sw.stereoSpread}, /* Spread */
           },
           true};
-      potTabs[TabSrc].pages[2] = ParameterPage{
+      rotaryTabs[TabSrc].pages[2] = ParameterPage{
           {
               /*  MIN,  MAX,  RESPONSE     , parameter* */
-              {1.f, Calcis::MAX_SWARM_VOICES, PotSpec::RsInt,
-               &sw.voices},                                 /* PWM*/
-              {0.f, 1.f, PotSpec::RsInt, &sw.morphMode},    /* morphMode */
-              {0.f, 1.f, PotSpec::RsBool, &sw.randomPhase}, /* randomPhase */
-              {0.f, 1.f, PotSpec::RsLin, nullptr},          /* Spread */
+              {1.f, Calcis::MAX_SWARM_VOICES, RotaryInputSpec::RsInt,
+               &sw.voices},                                      /* PWM*/
+              {0.f, 1.f, RotaryInputSpec::RsInt, &sw.morphMode}, /* morphMode */
+              {0.f, 1.f, RotaryInputSpec::RsBool,
+               &sw.randomPhase},                           /* randomPhase */
+              {0.f, 1.f, RotaryInputSpec::RsLin, nullptr}, /* Spread */
           },
           true};
 
-      potTabs[TabFilter].enabled = true;
-      potTabs[TabFilter].pages[0] =
+      rotaryTabs[TabFilter].enabled = true;
+      rotaryTabs[TabFilter].pages[0] =
           ParameterPage{{
                             /*  MIN,   MAX, INV,  RESPONSE, parameter* */
-                            {0.f, 1.f, PotSpec::RsKDamp, &pCfg->filter},
-                            {0.f, 1.f, PotSpec::RsGCut, &pCfg->filter},
-                            {0.f, 1.f, PotSpec::RsMorph, &pCfg->filter},
-                            {0.f, 1.f, PotSpec::RsDrive, &pCfg->filter},
+                            {0.f, 1.f, RotaryInputSpec::RsKDamp, &pCfg->filter},
+                            {0.f, 1.f, RotaryInputSpec::RsGCut, &pCfg->filter},
+                            {0.f, 1.f, RotaryInputSpec::RsMorph, &pCfg->filter},
+                            {0.f, 1.f, RotaryInputSpec::RsDrive, &pCfg->filter},
                         },
                         true};
     }
 
     // Trigger button (unchanged)
-    uint8_t trigPin = 6;
+    uint8_t trigPin = 26;
 
     // NEW: Tab buttons and LEDs
     static constexpr int kNumTabs = 4;
 
-    uint8_t tabBtnPins[kNumTabs] = {14, 15, 16, 17};  // GP14..GP17
-    uint8_t tabLedPins[kNumTabs] = {18, 19, 20, 21};  // GP18..GP21
-
-    // NEW: per-tab page counts (can change later)
-    uint8_t tabPageCount[kNumTabs] = {3, 1, 1, 1};  // Tab 0 = 1 page for now
+    std::array<uint8_t, kNumTabs> tabBtnPins{14, 15, 16, 17};  // GP14..GP17
+    std::array<uint8_t, kNumTabs> tabLedPins{18, 19, 20, 21};  // GP18..GP21
+    std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
 
     // Scanning/timing
     uint16_t pollMs = 5;          // ~200 Hz
@@ -145,15 +157,18 @@ class UI {
         3.3f                  /* vrefVolts */
     };
 
-    ClcisPots::Cfg potsCfg = {
-        {0, 1, 2, 3}, /* channels */
-        4095,         /* maxCode */
-        0.2f,         /* emalAlpha */
-        32.f,         /* activityLSB */
-    };
+    // ClcisPots::Cfg potsCfg = {
+    //     {0, 1, 2, 3}, /* channels */
+    //     4095,         /* maxCode */
+    //     0.2f,         /* emalAlpha */
+    //     32.f,         /* activityLSB */
+    // };
 
-    // Pots
-    ParameterTab potTabs[kNumTabs];
+    std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 6};
+    float encClkDiv = 50.0f;  // ~40 kHz sample
+
+    // Rotary Input
+    ParameterTab rotaryTabs[kNumTabs];
   };
 
   explicit UI(Calcis::Cfg* cfg, Calcis::Feedback* fb);
@@ -161,6 +176,11 @@ class UI {
   void update();  // call each loop()
 
  private:
+  // Encoder geometry: 24 PPR, quadrature x4 => 96 counts/rev, two turns => 192
+  static constexpr int kEncCountsPerRev = 24;
+  static constexpr int kEncTwoTurnSpan = 2 * kEncCountsPerRev;
+  static constexpr int kAdcMaxCode = 4095;
+
   Cfg ucfg_;
   Calcis::Feedback* fb_;
   int saturationCounter_ = 0;
@@ -168,30 +188,34 @@ class UI {
   // Buttons
   OneButton trigBtn_;
   static constexpr int kNumTabs = Cfg::kNumTabs;
-  std::array<OneButton, kNumTabs> tabBtns_;  // NEW: OneButton for tabs
-
-  // Context passed to OneButton callbacks (so we know which tab fired)
+  std::array<OneButton, kNumTabs> tabBtns_;
   struct TabCtx {
     UI* self;
     uint8_t idx;
   };
-  std::array<TabCtx, kNumTabs> tabCtx_;  // NEW
+  std::array<TabCtx, kNumTabs> tabCtx_;
+
+  struct PageState {
+    std::array<int, ParameterPage::ROTARY_COUNT> rawPos{0, 0, 0, 0};
+  };
+  struct TabState {
+    uint8_t currentPage = 0;
+    std::array<PageState, ParameterTab::MAX_PAGE> pages{};
+  };
+
+  uint8_t currentTab_ = 0;
+  std::array<TabState, kNumTabs> tabs_{};
 
   SafeFilterParams<CalcisTR::SR> filterParams_;
 
-  // Pots
-  hw::ADS1015Reader adsPinReader_;
-  ClcisPots multiInput_;
-
   uint32_t tPrev_ = 0;
 
-  // Tabs / pages state
-  uint8_t currentTab_ = 0;
-  uint8_t currentPage_[kNumTabs] = {0, 0, 0, 0};
-
   // LEDs
-  JLed triggerLED{2};
-  JLed clippingLED{3};
+  JLed triggerLED{27};
+  JLed clippingLED{28};
+
+  ClcisEncs encs_;
+  std::array<int32_t, ParameterPage::ROTARY_COUNT> encLast_{0, 0, 0, 0};
 
   void tickLED();
 
@@ -202,10 +226,10 @@ class UI {
   static void onPress_(void* param);     // trigger
   static void onTabPress_(void* param);  // NEW: tab press (select/advance)
 
-  const PotSpec& getPotSpec(int index) const {
-    return ucfg_.potTabs[currentTab_]
-        .pages[currentPage_[currentTab_]]
-        .pots[index];
+  const RotaryInputSpec& getRotaryInputSpec(int index) const {
+    return ucfg_.rotaryTabs[currentTab_]
+        .pages[tabs_[currentTab_].currentPage]
+        .rotary[index];
   }
 
   // Mapping helpers
@@ -215,7 +239,7 @@ class UI {
                               bool invert);
 
   // Per-pot processing — returns true if config changed
-  void processPot_(int id);
+  void processRotary_(int id);
 
   // NEW: Tabs / pages
   void scanTabButtons_();
@@ -223,6 +247,23 @@ class UI {
   void advancePage_();
   void updateLeds_();
   void blinkLed_(uint8_t tab, uint8_t count);
+  void resetEncoderBaselines_();
+
+  static inline int spanFor_(const zlkm::UI* self, int id) {
+    const auto& spec = self->getRotaryInputSpec(id);
+    return (spec.encSpanCounts > 0) ? spec.encSpanCounts : kEncTwoTurnSpan;
+  }
+
+  static inline int deltaRawFromEnc_(const zlkm::UI* self, int id,
+                                     int32_t deltaCounts) {
+    const auto& spec = self->getRotaryInputSpec(id);
+    if (spec.encInvert) deltaCounts = -deltaCounts;
+    const int span = spanFor_(self, id);
+    const float scale = (span > 0) ? (float(kAdcMaxCode) / float(span)) : 0.0f;
+    return int(lroundf(float(deltaCounts) * scale));
+  }
+
+  void seedRawFromCfg_();
 };
 
 }  // namespace zlkm

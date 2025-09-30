@@ -1,0 +1,7 @@
+.program quad_encoder
+; Reads two pins (A = base pin, B = base+1) and auto-pushes a 2-bit sample.
+; Decoding to +/-1 is done in C/C++.
+
+.wrap_target
+    in pins, 2        ; sample A,B -> shift into ISR (2 bits per cycle)
+.wrap
