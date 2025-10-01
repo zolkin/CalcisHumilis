@@ -1,3 +1,5 @@
+#pragma once
+
 namespace math {
 
 template <class T>
@@ -40,6 +42,13 @@ static inline float clamp01(float x) {
   if (x > 1.0f) return 1.0f;
   if (x < -1.0f) return -1.0f;
   return x;
+}
+
+inline float smoothstep(float a, float b, float x) {
+  float t = (x - a) / (b - a);
+  if (t < 0.f) t = 0.f;
+  if (t > 1.f) t = 1.f;
+  return t * t * (3.f - 2.f * t);
 }
 
 }  // namespace math

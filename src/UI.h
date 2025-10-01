@@ -170,7 +170,7 @@ class UI {
 
  private:
   // Encoder geometry: 24 PPR, quadrature x4 => 96 counts/rev, two turns => 192
-  static constexpr int kEncCountsPerRev = 24;
+  static constexpr int kEncCountsPerRev = 24 * 4;
   static constexpr int kEncTwoTurnSpan = 2 * kEncCountsPerRev;
   static constexpr int kAdcMaxCode = 4095;
 

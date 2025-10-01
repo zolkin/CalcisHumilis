@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "dsp/Dsp.h"
+#include "math/Math.h"
 
 namespace zlkm {
 
@@ -14,10 +15,11 @@ struct DJFilterLimitsDefault {
   static constexpr float kQmax = 10.0f;   // musical max Q
   static constexpr float kCurve = 2.0f;   // res 0..1 -> Q perceptual curve
   static constexpr float kMinHz = 20.0f;  // practical low cutoff
-  static constexpr float kHardTopHz =
-      16000.f;  // optional hard cap (<=0 disables)
+  static constexpr float kHardTopHz = 16000.f;  // hard cap (<=0 disables)
   static constexpr float kTrimStrength = 0.7f;  // auto-trim vs Q (0..~1.5)
   static constexpr float kDriveMax = 14.0f;     // UI drive top; UI min is unity
+  static constexpr float kStabTau = 0.95f;  // stability margin τ (0.9..0.98)
+  static constexpr float kBassMax = 2.f;    // up to 200% extra low-end
 };
 
 // -----------------------------------------------------------------------------
@@ -31,11 +33,14 @@ class DJFilterTPT {
   struct Cfg {
     float gCut = dsp::hzToGCut<SR>(DJFilterLimitsDefault::kHardTopHz);
     float kDamp = dsp::res01ToKDamp_smooth(0.f);
-    float morph = 0.f;
+    float lpWeight = 1.f;  // low-pass contribution (Q-compensated)
+    float hpWeight = 0.f;  // high-pass contribution
     float drive = 1.f;
 
-    std::array<float, 4> const& asTarget() const {
-      return *reinterpret_cast<std::array<float, 4> const*>(this);
+    static constexpr int PCOUNT = 5;
+
+    std::array<float, PCOUNT> const& asTarget() const {
+      return *reinterpret_cast<std::array<float, PCOUNT> const*>(this);
     }
   };
 
@@ -57,10 +62,12 @@ class DJFilterTPT {
     const float v2 = cfg.gCut * v1 + ic1eq_;                       // bp
     const float v3 = cfg.gCut * v2 + ic2eq_;                       // lp
 
-    ic1eq_ = 2.0f * v2 - ic1eq_;
-    ic2eq_ = 2.0f * v3 - ic2eq_;
+    static constexpr float kLeakMul = 1.0f - (1.0f / (SR * 60.0f));
+    ic1eq_ = (2.0f * v2 - ic1eq_) * kLeakMul;
+    ic2eq_ = (2.0f * v3 - ic2eq_) * kLeakMul;
 
-    float y = (1.0f - cfg.morph) * v3 + cfg.morph * v1;  // LP->HP morph
+    float y = cfg.lpWeight * v3 + cfg.hpWeight * v1;
+
     y *= cfg.drive;
 
     // cheap soft clip (no guards)
@@ -121,6 +128,17 @@ class SafeFilterParams {
     cfg.gCut = tanf(float(M_PI) * cutoffHz / kSR);
     cfg.kDamp = 2.f / Q;
 
+    const float Qnorm = (Q - Limits::kQmin) / (Limits::kQmax - Limits::kQmin);
+    float cutoffFade = math::smoothstep(200.f, 600.f, cutoffHz);
+    float bassBoost = 1.f + Limits::kBassMax * Qnorm * cutoffFade;
+    cfg.lpWeight = (1.f - morph01_) * bassBoost;
+    cfg.hpWeight = morph01_;
+    float lpWeight = (1.0f - morph01) * bassBoost;
+    float hpWeight = morph01;
+
+    cfg.lpWeight = lpWeight;
+    cfg.hpWeight = hpWeight;
+
     // Drive: UI 0..1 -> [1..kDriveMax], then auto-trim vs Q (may dip below 1)
     const float driveUI = 1.f + drive01_ * (Limits::kDriveMax - 1.f);
     const float trim = 1.f / (1.f + Limits::kTrimStrength * (Q - 1.f));
@@ -138,6 +156,21 @@ class SafeFilterParams {
     return (v < lo) ? lo : ((v > hi) ? hi : v);
   }
 
+  static inline float fMaxFromQ_alphaGamma(float Q) {
+    const float base =
+        (Limits::kAlpha * kNyq) / (1.f + Limits::kGamma * (Q - 1.f));
+    return (Limits::kHardTopHz > 0.f) ? fminf(base, Limits::kHardTopHz) : base;
+  }
+
+  // NEW: strict stability cutoff cap (enforces gCut <= τ·k)
+  static inline float fMaxFromK_stable(float k) {
+    // f_stab(k) = (SR/π) * atan(τ * k)
+    const float t = Limits::kStabTau * k;
+    const float f = (kSR / float(M_PI)) * atanf(t);
+    // also respect practical floor:
+    return fmaxf(f, Limits::kMinHz);
+  }
+
   static inline float QFromRes01(float r) {
     const float t = powf(clamp01(r), Limits::kCurve);
     return Limits::kQmin * powf(Limits::kQmax / Limits::kQmin, t);
@@ -151,15 +184,25 @@ class SafeFilterParams {
   }
 
   static inline float fMaxFromQ(float Q) {
-    const float base =
-        (Limits::kAlpha * kNyq) / (1.f + Limits::kGamma * (Q - 1.f));
-    return (Limits::kHardTopHz > 0.f) ? fminf(base, Limits::kHardTopHz) : base;
+    const float k = 2.f / Q;
+    const float f_perc = fMaxFromQ_alphaGamma(Q);
+    const float f_stab = fMaxFromK_stable(k);
+    return fminf(f_perc, f_stab);
   }
+
   // Replace your QmaxFromHz with this:
   static inline float QmaxFromHz(float hz) {
     hz = (hz <= 0.f) ? Limits::kMinHz : hz;
-    return clampf(1.f + (((Limits::kAlpha * kNyq) / hz) - 1.f) / Limits::kGamma,
-                  Limits::kQmin, Limits::kQmax);
+    // Your existing UI/perceptual cap (keep your feel)
+    const float Q_ui =
+        clampf(1.f + (((Limits::kAlpha * kNyq) / hz) - 1.f) / Limits::kGamma,
+               Limits::kQmin, Limits::kQmax);
+
+    // Stability cap: Q_stab = 2τ / gCut
+    const float g = tanf(float(M_PI) * hz / kSR);
+    const float Q_stab = 2.f * Limits::kStabTau / fmaxf(g, 1e-20f);
+
+    return fminf(Q_ui, clampf(Q_stab, Limits::kQmin, Limits::kQmax));
   }
 
   // --- stored normals (0..1) ---

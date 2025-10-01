@@ -54,8 +54,9 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
   auto calcisCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 2>(
       &outGain_, {cfg_->outGain, cfg_->cyclesPerSample});
 
-  auto filterCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 4>(
-      &fCfg_.gCut, cfg_->filter.asTarget());
+  auto filterCfgItp =
+      makeBlockInterpolator<TR::BLOCK_FRAMES, FilterCfg::PCOUNT>(
+          &fCfg_.gCut, cfg_->filter.asTarget());
 
   IntBuffer buffer;
   for (size_t i = 0; i < TR::BLOCK_FRAMES; ++i) {
