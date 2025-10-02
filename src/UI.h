@@ -9,6 +9,7 @@
 #include "AudioTraits.h"
 #include "CalcisHumilis.h"
 #include "MultiInput.h"
+#include "Screen.h"
 #include "hw/pico/QuadManagerPio.h"
 #include "hw\ADSPinReader.h"
 
@@ -18,6 +19,7 @@ namespace zlkm {
 using CalcisTR = AudioTraits<48000, 1, 32, 64>;
 using Calcis = CalcisHumilis<CalcisTR>;
 using ClcisPots = MultiInput<hw::ADS1015Reader>;
+using ScreenSSD = Screen<ScreenController::SSD1306_128x64>;
 
 struct RotaryInputSpec {
   enum Response {
@@ -209,6 +211,8 @@ class UI {
 
   ClcisEncs encs_;
   std::array<int32_t, ParameterPage::ROTARY_COUNT> encLast_{0, 0, 0, 0};
+
+  ScreenSSD screen_;
 
   void tickLED();
 

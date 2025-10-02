@@ -12,7 +12,8 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
     : ucfg_(cfg),
       fb_(fb),
       trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true),
-      encs_(pio0, ucfg_.encPinsA, ucfg_.encClkDiv) {
+      encs_(pio0, ucfg_.encPinsA, ucfg_.encClkDiv),
+      screen_(ScreenSSD::Cfg()) {
   initTabs_();
   seedRawFromCfg_();
 
@@ -199,6 +200,14 @@ void UI::update() {
       }
     }
   }
+
+  screen_.update([&](U8G2& g) {
+    g.setFont(u8g2_font_6x12_tf);
+    g.drawStr(0, 12, "Calcis Humilis");
+    // char buf[32]; snprintf(buf, sizeof(buf), "Cutoff: %d", ui.cutoff());
+    // g.drawStr(0, 28, buf);
+    g.drawFrame(0, 0, screen_.width(), screen_.height());
+  });
 
   tickLED();
 }
