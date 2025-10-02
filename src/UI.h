@@ -136,8 +136,8 @@ class UI {
     // NEW: Tab buttons and LEDs
     static constexpr int kNumTabs = 4;
 
-    std::array<uint8_t, kNumTabs> tabBtnPins{14, 15, 16, 17};  // GP14..GP17
-    std::array<uint8_t, kNumTabs> tabLedPins{18, 19, 20, 21};  // GP18..GP21
+    std::array<uint8_t, kNumTabs> tabBtnPins{15, 16, 17, 18};  // GP14..GP17
+    std::array<uint8_t, kNumTabs> tabLedPins{19, 20, 21, 22};  // GP18..GP21
     std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
 
     // Scanning/timing
@@ -157,7 +157,7 @@ class UI {
         3.3f                  /* vrefVolts */
     };
 
-    std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 6};
+    std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 13};
     float encClkDiv = 50.0f;  // ~40 kHz sample
 
     // Rotary Input
