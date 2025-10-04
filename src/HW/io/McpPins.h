@@ -94,7 +94,7 @@ class McpPins {
     }
   }
 
-  inline void applyPinMode(uint8_t p, PinMode m) const {
+  inline void applyPinMode(uint8_t p, PinMode m) {
     static const uint8_t map[] = {INPUT, INPUT_PULLUP, OUTPUT};
     dev_.pinMode(p, map[(int)m]);
   }
