@@ -3,8 +3,7 @@
 
 #include "math/Constants.h"
 
-namespace zlkm {
-namespace dsp {
+namespace zlkm::mod {
 
 // Intended Usage:
 // Group all the interpolatable parameters in one place and modulate them all at
@@ -38,5 +37,4 @@ inline BlockInterpolatorN<BLOCK_SIZE, N> makeBlockInterpolator(
   return BlockInterpolatorN<BLOCK_SIZE, N>(src, targets);
 }
 
-}  // namespace dsp
-}  // namespace zlkm
+}  // namespace zlkm::dsp

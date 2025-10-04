@@ -1,6 +1,6 @@
 #pragma once
 
-namespace math {
+namespace zlkm::math {
 
 template <class T>
 constexpr T clamp(const T t, const T min, const T max) {
@@ -51,4 +51,4 @@ inline float smoothstep(float a, float b, float x) {
   return t * t * (3.f - 2.f * t);
 }
 
-}  // namespace math
+}  // namespace zlkm::math

@@ -7,9 +7,9 @@
 
 #include <atomic>
 
-#include "spin_lock.h"
+#include "util/spin_lock.h"
 
-namespace zlkm {
+namespace zlkm::app {
 /**
  * Dual-core harness for RP2350 (Pico 2).
  *

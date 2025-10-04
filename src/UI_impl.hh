@@ -3,7 +3,7 @@
 
 #include "UI.h"
 
-namespace zlkm {
+namespace zlkm::ch {
 
 static constexpr int kAdcMaxCode = 4095;  // RP2040 12-bit
 

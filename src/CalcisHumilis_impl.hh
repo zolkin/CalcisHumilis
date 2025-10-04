@@ -2,9 +2,9 @@
 #include <math.h>
 
 #include "CalcisHumilis.h"
-#include "dsp/BlockInterpolator.h"
+#include "mod/BlockInterpolator.h"
 
-namespace zlkm {
+namespace zlkm::ch {
 
 template <class TR>
 float CalcisHumilis<TR>::softClip(float x) {
@@ -21,7 +21,8 @@ CalcisHumilis<TR>::CalcisHumilis(const Cfg *cfg, Feedback *fb)
     : cfg_(cfg),
       fb_(fb),
       outGain_(cfg_->outGain),
-      cyclesPerSample_(cfg_->cyclesPerSample) {}
+      cyclesPerSample_(cfg_->cyclesPerSample),
+      swarm(cfg->swarmOsc) {}
 
 template <class TR>
 void CalcisHumilis<TR>::trigger() {
@@ -41,7 +42,7 @@ static inline void array_float_to_int32(const std::array<float, N> &src,
 
 template <class TR>
 void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
-  using namespace dsp;
+  using namespace zlkm::mod;
   if (cfg_->trigCounter > trigCounter_) {
     trigCounter_ = cfg_->trigCounter;
     trigger();

@@ -3,12 +3,19 @@
 
 #include <array>
 
-#include "MorphOsc.h"
+#include "audio/MorphOsc.h"
 
-namespace zlkm {
+namespace zlkm::audio::engine {
 
-template <int SR>
-struct SwarmConfig {
+// ---------------- Swarm ----------------
+template <int N, int SR>
+class SwarmMorph {
+  static constexpr int kMaxSwarmVoices = N;
+  static constexpr float INV_SR_F = 1.f / float(SR);
+
+ public:
+ 
+struct Cfg {
   // Some dirty tricks here!!
   static constexpr int INTERPOLATABLE_PARAMS = 5;
   float* i_begin() { return &detuneMul; }
@@ -29,14 +36,7 @@ struct SwarmConfig {
   bool randomPhase = 1;  // randomize start phase, int
 };
 
-// ---------------- Swarm ----------------
-template <int N, int SR>
-class SwarmMorph {
-  static constexpr int kMaxSwarmVoices = N;
-  static constexpr float INV_SR_F = 1.f / float(SR);
-
- public:
-  explicit SwarmMorph(const SwarmConfig<SR>& c = SwarmConfig<SR>()) : cfg_(c) {
+  explicit SwarmMorph(const Cfg& c) : cfg_(c) {
     cfgUpdated();
   }
 
@@ -81,7 +81,7 @@ class SwarmMorph {
     outR = R;
   }
 
-  SwarmConfig<SR>& cfg() { return cfg_; }
+  Cfg& cfg() { return cfg_; }
 
  private:
   // ---------------- helpers ----------------
@@ -149,8 +149,8 @@ class SwarmMorph {
   }
 
  private:
-  using MorphOsc = zlkm::MorphOscN<N, SR>;
-  SwarmConfig<SR> cfg_;
+  using MorphOsc = MorphOscN<N, SR>;
+  Cfg cfg_;
   MorphOsc osc_;
 
   std::array<float, N> tmp_{};

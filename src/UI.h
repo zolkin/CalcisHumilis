@@ -6,20 +6,17 @@
 
 #include <array>
 
-#include "AudioTraits.h"
+#include "audio/AudioTraits.h"
 #include "CalcisHumilis.h"
-#include "MultiInput.h"
-#include "Screen.h"
+#include "hw/Screen.h"
 #include "hw/pico/QuadManagerPio.h"
-#include "hw\ADSPinReader.h"
 
 // Identify each pot (extend as you add more)
-namespace zlkm {
+namespace zlkm::ch {
 
-using CalcisTR = AudioTraits<48000, 1, 32, 64>;
-using Calcis = CalcisHumilis<CalcisTR>;
-using ClcisPots = MultiInput<hw::ADS1015Reader>;
-using ScreenSSD = Screen<ScreenController::SSD1306_128x64>;
+using CalcisTR = audio::AudioTraits<48000, 1, 32, 64>;
+using Calcis = ch::CalcisHumilis<CalcisTR>;
+using ScreenSSD = hw::Screen<hw::ScreenController::SSD1306_128x64>;
 
 struct RotaryInputSpec {
   enum Response {
@@ -149,16 +146,6 @@ class UI {
 
     Calcis::Cfg* pCfg;
 
-    hw::ADS1015Reader::Cfg readerCfg = {
-        4,                    /* i2cSDA */
-        5,                    /* i2cSCL */
-        400000,               /* i2cHz */
-        0x48,                 /* i2cAddr */
-        GAIN_ONE,             /* gain */
-        RATE_ADS1015_3300SPS, /* rate */
-        3.3f                  /* vrefVolts */
-    };
-
     std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 13};
     float encClkDiv = 50.0f;  // ~40 kHz sample
 
@@ -201,7 +188,7 @@ class UI {
   uint8_t currentTab_ = 0;
   std::array<TabState, kNumTabs> tabs_{};
 
-  SafeFilterParams<CalcisTR::SR> filterParams_;
+  audio::SafeFilterParams<CalcisTR::SR> filterParams_;
 
   uint32_t tPrev_ = 0;
 
@@ -246,12 +233,12 @@ class UI {
   void blinkLed_(uint8_t tab, uint8_t count);
   void resetEncoderBaselines_();
 
-  static inline int spanFor_(const zlkm::UI* self, int id) {
+  static inline int spanFor_(const UI* self, int id) {
     const auto& spec = self->getRotaryInputSpec(id);
     return (spec.encSpanCounts > 0) ? spec.encSpanCounts : kEncTwoTurnSpan;
   }
 
-  static inline int deltaRawFromEnc_(const zlkm::UI* self, int id,
+  static inline int deltaRawFromEnc_(const UI* self, int id,
                                      int32_t deltaCounts) {
     const auto& spec = self->getRotaryInputSpec(id);
     if (spec.encInvert) deltaCounts = -deltaCounts;

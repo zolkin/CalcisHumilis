@@ -7,12 +7,12 @@
 #include <Arduino.h>
 #include <Stream.h>
 
-#include "ADEnvelopes.h"
-#include "DJFilter.h"
-#include "MorphOsc.h"
-#include "Swarm.h"
+#include "mod/ADEnvelopes.h"
+#include "audio/DJFilter.h"
+#include "audio/MorphOsc.h"
+#include "audio/engine/Swarm.h"
 
-namespace zlkm {
+namespace zlkm::ch {
 
 // -------------------- NEW: OS template param --------------------
 // NTAPS is configurable; 63 is a decent default for 2–4x OS.
@@ -33,7 +33,9 @@ class CalcisHumilis {
   static constexpr float rate(float ms) { return dsp::msToRate(ms, SR); }
   static constexpr float cycles(float hz) { return hz * INV_SR; }
 
-  using Filter = DJFilterTPT<SR * OS>;
+  using Swarm = audio::engine::SwarmMorph<MAX_SWARM_VOICES, SR * OS>;
+  using SwarmCfg = typename Swarm::Cfg;
+  using Filter = audio::DJFilterTPT<SR * OS>;
   using FilterCfg = typename Filter::Cfg;
 
   enum OscMode { OscSwarm = 0, OscCount };
@@ -48,13 +50,13 @@ class CalcisHumilis {
     EnvCount
   };
 
-  using Envelopes = ADEnvelopes<EnvCount>;
+  using Envelopes = mod::ADEnvelopes<EnvCount>;
   using EnvCfg = typename Envelopes::EnvCfg;
 
   struct Cfg {
     OscMode oscMode = OscSwarm;
 
-    SwarmConfig<SR * OS> swarmOsc;
+    SwarmCfg swarmOsc;
 
     float outGain = .7f;
     float cyclesPerSample = cycles(65.f);
@@ -103,7 +105,7 @@ class CalcisHumilis {
   float cyclesPerSample_;
 
   // Oscillators run at OS*SR so their phase math sees true step size
-  SwarmMorph<MAX_SWARM_VOICES, SR * OS> swarm;
+  Swarm swarm;
   FilterCfg fCfg_;
 
   float currentPan = 0.5f;

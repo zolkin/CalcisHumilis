@@ -1,7 +1,7 @@
 #pragma once
 #include <math.h>
 
-namespace blep {
+namespace zlkm::dsp {
 
 struct Injector2TapX2 {
   float carry = 0.0f;  // next-sample tap

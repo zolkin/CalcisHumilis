@@ -3,8 +3,7 @@
 
 #include "math/Constants.h"
 
-namespace zlkm {
-namespace dsp {
+namespace zlkm::dsp {
 
 static inline float sin01_poly7(float t) {
   // Map directly to radians
@@ -68,6 +67,4 @@ constexpr float res01ToKDamp_smooth(float res01, float Qmin = 0.707f,
   return 2.0f / Q;  // k = 2/Q
 }
 
-}  // namespace dsp
-
-}  // namespace zlkm
+}  // namespace zlkm::dsp

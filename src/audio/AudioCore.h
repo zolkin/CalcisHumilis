@@ -1,6 +1,7 @@
 #pragma once
 #include "AudioTraits.h"
 
+namespace zlkm::audio {
 // ---------- Hardware pins ---------- TODO: move to the Output.h
 constexpr uint8_t PIN_BCLK = 10, PIN_LRCK = 11, PIN_DATA = 12;
 
@@ -73,3 +74,5 @@ class AudioCore {
   // trigger edge tracking
   uint32_t lastTrigCounter_ = 0;
 };
+
+} // namespace zlkm::audio

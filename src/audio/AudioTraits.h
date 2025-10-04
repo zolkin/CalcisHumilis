@@ -3,7 +3,7 @@
 
 #include <array>
 
-namespace zlkm {
+namespace zlkm::audio {
 
 template <int BITS>
 struct BitTraitsImpl;

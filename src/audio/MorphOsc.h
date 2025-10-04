@@ -5,10 +5,10 @@
 #include <array>
 
 #include "dsp/Blep.h"
-#include "dsp/Dsp.h"
-#include "math/Math.h"
+#include "dsp/Util.h"
+#include "math/Util.h"
 
-namespace zlkm {
+namespace zlkm::audio {
 
 // -------- MORPH SINE->TRIANGLE->SQUARE->SAW --------
 template <int N, int SR>
@@ -35,7 +35,7 @@ class MorphOscN {
   struct alignas(16) State {
     float morph = 0.0f;           // 0..1
     float pulseWidth = 0.5f;      // 0..1
-    blep::Injector2TapX2 blep{};  // now dt in [0,1) and the result in +-1
+    dsp::Injector2TapX2 blep{};  // now dt in [0,1) and the result in +-1
     float cyclesPerSample = 0.0f;
     float phase = 0.0f;  // t in [0,1)
   };

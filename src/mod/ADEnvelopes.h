@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-namespace zlkm {
+namespace zlkm::mod {
 
 #pragma once
 #include <algorithm>

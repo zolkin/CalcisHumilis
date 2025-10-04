@@ -1,16 +1,17 @@
-#include "Main.h"  // your dual-core harness (header-only)
+#include "app\Main.h"  // your dual-core harness (header-only)
 
 #include <Arduino.h>
 
-#include "AudioCore.h"
-#include "Profiler.h"
+#include "audio/AudioCore.h"
+#include "util/Profiler.h"
 #include "UI.h"
 
 using namespace audio_tools;
 using namespace zlkm;
+using namespace zlkm::ch;
 
-using MyAudioCore = AudioCore<CalcisTR, CalcisHumilis>;
-using App = MainApp<MyAudioCore, UI>;
+using MyAudioCore = audio::AudioCore<CalcisTR, CalcisHumilis>;
+using App = app::MainApp<MyAudioCore, UI>;
 
 // ---------- Arduino entry points ----------
 

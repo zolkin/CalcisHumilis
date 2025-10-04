@@ -5,6 +5,8 @@
 
 #include <array>
 
+namespace zlkm::hw {
+
 // Pick your controller at compile time:
 enum class ScreenController : uint8_t { SSD1306_128x64, SH1107_64x128 };
 
@@ -148,3 +150,5 @@ class Screen {
   uint32_t lastActivityMs_{0};
   uint32_t lastFrameMs_{0};
 };
+
+} // namespace zlkm::hw

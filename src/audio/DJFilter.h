@@ -2,10 +2,10 @@
 #include <Arduino.h>
 #include <math.h>
 
-#include "dsp/Dsp.h"
-#include "math/Math.h"
+#include "..\dsp\Util.h"
+#include "..\math\Util.h"
 
-namespace zlkm {
+namespace zlkm::audio {
 
 // ------- Safe, UI-side param gate (0..1 inputs) -------
 struct DJFilterLimitsDefault {
