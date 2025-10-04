@@ -3,10 +3,9 @@
 #include "pico/stdlib.h"
 
 // Include the PIO program generated header from your .pio file:
-#include "hw/pio/quad_encoder.pio.h"  // from pico-examples (pio/quadrature_encoder)
+#include "hw/pio/quad_encoder.pio.gen.h"  // from pico-examples (pio/quadrature_encoder)
 
-namespace zlkm {
-namespace hw {
+namespace zlkm::hw::pico {
 
 // Zero-allocation, fixed-size manager
 template <int N>
@@ -99,6 +98,4 @@ class QuadManagerPIO {
   std::array<Enc, N> enc_;
 };
 
-}  // namespace hw
-
-}  // namespace zlkm
+}  // namespace zlkm::hw

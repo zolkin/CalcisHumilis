@@ -12,7 +12,10 @@ import sys
 PROJECT_DIR = Path(env["PROJECT_DIR"])
 PIO_DIR     = PROJECT_DIR / "src" / "hw" / "pio"     # scan here (recursive)
 OUTPUT_MODE = "c-sdk"                                # pioasm output mode
+GENERATED_SUFFIX = ".gen"
 PIOASM_BIN  = os.environ.get("PIOASM") or shutil.which("pioasm")
+
+print("[gen_pio_header] imported")
 
 def compile_pio(pio_file: Path, hdr_file: Path):
     hdr_file.parent.mkdir(parents=True, exist_ok=True)
@@ -26,6 +29,7 @@ def needs_rebuild(pio_file: Path, hdr_file: Path) -> bool:
     return pio_file.stat().st_mtime > hdr_file.stat().st_mtime
 
 def ensure_all_headers(*args, **kwargs):
+    print("[PICO] building .pio files")
     if not PIOASM_BIN:
         raise RuntimeError(
             "pioasm not found. Install Pico SDK tools or set env var PIOASM to the full path."
@@ -42,7 +46,7 @@ def ensure_all_headers(*args, **kwargs):
         return
 
     for pio in pio_files:
-        hdr = pio.with_suffix(pio.suffix + ".h")  # foo.pio -> foo.pio.h
+        hdr = pio.with_suffix(pio.suffix + GENERATED_SUFFIX + ".h")  # foo.pio -> foo.pio.h
         try:
             if needs_rebuild(pio, hdr):
                 compile_pio(pio, hdr)
@@ -51,4 +55,4 @@ def ensure_all_headers(*args, **kwargs):
             raise RuntimeError(f"pioasm failed for {pio} (exit {e.returncode})") from e
 
 # Run before building the firmware
-env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", ensure_all_headers)
+env.AddPreAction("$BUILD_DIR/src/main.cpp.o", ensure_all_headers)

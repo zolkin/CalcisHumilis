@@ -6,10 +6,14 @@
 
 #include <array>
 
-#include "audio/AudioTraits.h"
 #include "CalcisHumilis.h"
+#include "audio/AudioTraits.h"
 #include "hw/Screen.h"
 #include "hw/pico/QuadManagerPio.h"
+#include "hw/screensavers/SaverMux.h"
+#include "hw/screensavers/StarField.h"
+#include "hw/screensavers/ThroughTheStars.h"
+#include "util/IdleTimer.h"
 
 // Identify each pot (extend as you add more)
 namespace zlkm::ch {
@@ -17,6 +21,9 @@ namespace zlkm::ch {
 using CalcisTR = audio::AudioTraits<48000, 1, 32, 64>;
 using Calcis = ch::CalcisHumilis<CalcisTR>;
 using ScreenSSD = hw::Screen<hw::ScreenController::SSD1306_128x64>;
+
+namespace ssv = zlkm::hw::ssaver;
+using SSaver = ssv::SaverMux<U8G2, ssv::ThroughTheStars, ssv::StarField>;
 
 struct RotaryInputSpec {
   enum Response {
@@ -59,7 +66,7 @@ struct ParameterPage {
   bool enabled = false;
 };
 
-using ClcisEncs = hw::QuadManagerPIO<ParameterPage::ROTARY_COUNT>;
+using ClcisEncs = hw::pico::QuadManagerPIO<ParameterPage::ROTARY_COUNT>;
 
 struct ParameterTab {
   static constexpr int MAX_PAGE = 4;
@@ -149,6 +156,8 @@ class UI {
     std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 13};
     float encClkDiv = 50.0f;  // ~40 kHz sample
 
+    uint32_t screenIdleMs = 10000;
+
     // Rotary Input
     ParameterTab rotaryTabs[kNumTabs];
   };
@@ -200,6 +209,8 @@ class UI {
   std::array<int32_t, ParameterPage::ROTARY_COUNT> encLast_{0, 0, 0, 0};
 
   ScreenSSD screen_;
+  util::IdleTimer idle_;
+  SSaver saver_;
 
   void tickLED();
 
@@ -250,6 +261,6 @@ class UI {
   void seedRawFromCfg_();
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::ch
 
 #include "UI_impl.hh"

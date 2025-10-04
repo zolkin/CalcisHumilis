@@ -18,8 +18,6 @@ namespace zlkm::ch {
 // NTAPS is configurable; 63 is a decent default for 2–4x OS.
 template <class TR>
 class CalcisHumilis {
-  static constexpr int NTAPS = 63;
-
   static constexpr int SR = TR::SR;
   static constexpr int OS = TR::OS;
   using OutBuffer = typename TR::BufferT;
