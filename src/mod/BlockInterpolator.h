@@ -31,10 +31,10 @@ class BlockInterpolatorN {
   std::array<float, N> step_;
 };
 
-template <int BLOCK_SIZE, int N>
+template <int BLOCK_SIZE, size_t N>
 inline BlockInterpolatorN<BLOCK_SIZE, N> makeBlockInterpolator(
     float* src, std::array<float, N> const& targets) {
   return BlockInterpolatorN<BLOCK_SIZE, N>(src, targets);
 }
 
-}  // namespace zlkm::dsp
+}  // namespace zlkm::mod

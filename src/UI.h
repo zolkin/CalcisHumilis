@@ -9,8 +9,9 @@
 #include "CalcisHumilis.h"
 #include "audio/AudioTraits.h"
 #include "hw/Screen.h"
+#include "hw/io/ButtonManager.h"
 #include "hw/io/McpPins.h"
-#include "hw/pico/QuadManagerPio.h"
+#include "hw/io/QuadManagerIO.h"
 #include "hw/screensavers/SaverMux.h"
 #include "hw/screensavers/StarField.h"
 #include "hw/screensavers/ThroughTheStars.h"
@@ -67,8 +68,6 @@ struct ParameterPage {
   bool enabled = false;
 };
 
-using ClcisEncs = hw::pico::QuadManagerPIO<ParameterPage::ROTARY_COUNT>;
-
 struct ParameterTab {
   static constexpr int MAX_PAGE = 4;
 
@@ -81,13 +80,18 @@ class UI {
   static constexpr float cyc(float p) { return Calcis::cycles(p); }
   using CH = Calcis;
 
+  using PinExpander = hw::io::Mcp23017Pins;
+  using TabButtons = hw::io::ButtonManager<4, PinExpander>;
+  using Encoders =
+      hw::io::QuadManagerIO<PinExpander, ParameterPage::ROTARY_COUNT>;
+
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
 
     CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
 
     Cfg(const Cfg&) = delete;
-    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_) {
+    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = {4, 5, 6, 7}} {
       rotaryTabs[TabSrc].enabled = true;
       rotaryTabs[TabSrc].pages[0] = ParameterPage{
           {
@@ -143,7 +147,8 @@ class UI {
     // NEW: Tab buttons and LEDs
     static constexpr int kNumTabs = 4;
 
-    std::array<uint8_t, kNumTabs> tabBtnPins{15, 16, 17, 18};  // GP14..GP17
+    // std::array<uint8_t, kNumTabs> tabBtnPins{15, 16, 17, 18};  // GP14..GP17
+    TabButtons::Cfg tabBtns;
     std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
 
     // Scanning/timing
@@ -179,13 +184,7 @@ class UI {
   // Buttons
   OneButton trigBtn_;
   static constexpr int kNumTabs = Cfg::kNumTabs;
-  std::array<OneButton, kNumTabs> tabBtns_;
   std::array<uint8_t, kNumTabs> tabLeds_;
-  struct TabCtx {
-    UI* self;
-    uint8_t idx;
-  };
-  std::array<TabCtx, kNumTabs> tabCtx_;
 
   struct PageState {
     std::array<int, ParameterPage::ROTARY_COUNT> rawPos{0, 0, 0, 0};
@@ -206,15 +205,15 @@ class UI {
   JLed triggerLED{27};
   JLed clippingLED{28};
 
-  ClcisEncs encs_;
-  std::array<int32_t, ParameterPage::ROTARY_COUNT> encLast_{0, 0, 0, 0};
-
   ScreenSSD screen_;
   util::IdleTimer idle_;
   SSaver saver_;
 
-  using PinExpander = hw::io::Mcp23017Pins;
   PinExpander pinExp_;
+  TabButtons tabBtns_;
+
+  Encoders encs_;
+  std::array<int32_t, ParameterPage::ROTARY_COUNT> encLast_{0, 0, 0, 0};
 
   void tickLED();
 
@@ -222,8 +221,7 @@ class UI {
   void initTabs_();
 
   // Handlers
-  static void onPress_(void* param);     // trigger
-  static void onTabPress_(void* param);  // NEW: tab press (select/advance)
+  static void onPress_(void* param);  // trigger
 
   const RotaryInputSpec& getRotaryInputSpec(int index) const {
     return ucfg_.rotaryTabs[currentTab_]

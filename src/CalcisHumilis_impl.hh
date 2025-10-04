@@ -43,21 +43,21 @@ static inline void array_float_to_int32(const std::array<float, N> &src,
 template <class TR>
 void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
   using namespace zlkm::mod;
+
   if (cfg_->trigCounter > trigCounter_) {
     trigCounter_ = cfg_->trigCounter;
     trigger();
   }
   envelopes_.setEnvs(cfg_->envs);
 
-  auto swarmCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 5>(
+  auto swarmCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
       swarm.cfg().i_begin(), cfg_->swarmOsc.asTarget());
 
   auto calcisCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 2>(
       &outGain_, {cfg_->outGain, cfg_->cyclesPerSample});
 
-  auto filterCfgItp =
-      makeBlockInterpolator<TR::BLOCK_FRAMES, FilterCfg::PCOUNT>(
-          &fCfg_.gCut, cfg_->filter.asTarget());
+  auto filterCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
+      &fCfg_.gCut, cfg_->filter.asTarget());
 
   IntBuffer buffer;
   for (size_t i = 0; i < TR::BLOCK_FRAMES; ++i) {
@@ -104,4 +104,4 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
   }
 }
 
-}  // namespace zlkm
+}  // namespace zlkm::ch

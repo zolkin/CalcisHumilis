@@ -12,7 +12,6 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
     : ucfg_(cfg),
       fb_(fb),
       trigBtn_(ucfg_.trigPin, /*activeLow=*/true, /*pullupActive=*/true),
-      encs_(pio0, ucfg_.encPinsA, ucfg_.encClkDiv),
       screen_(ScreenSSD::Cfg()),
       saver_(SSaver::Cfg{}),
       idle_(ucfg_.screenIdleMs),
@@ -21,7 +20,11 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
                              .clockHz = 400000,
                              .i2cSDA = 20,  // e.g. Pico pins
                              .i2cSCL = 21},
-              hw::io::PinMode::Output) {
+              hw::io::PinMode::Output),
+      tabBtns_(pinExp_, ucfg_.tabBtns),
+      encs_(pinExp_, Encoders::Cfg{.pinsA = {8, 10, 12, 14},
+                                   .pinsB = {9, 11, 13, 15},
+                                   .usePullUp = true}) {
   initTabs_();
   seedRawFromCfg_();
 
@@ -163,11 +166,6 @@ void UI::initTabs_() {
   // OneButton for each tab button (INPUT_PULLUP, activeLow=true)
   for (int i = 0; i < kNumTabs; ++i) {
     tabLeds_[i] = i;
-    tabBtns_[i] = OneButton(ucfg_.tabBtnPins[i], /*activeLow=*/false,
-                            /*pullupActive=*/false);
-    tabBtns_[i].setDebounceMs(3);
-    tabCtx_[i] = TabCtx{this, static_cast<uint8_t>(i)};
-    tabBtns_[i].attachPress(UI::onTabPress_, &tabCtx_[i]);
   }
 
   // Start on Tab 0
@@ -181,7 +179,17 @@ void UI::update() {
   // Tick all buttons
   trigBtn_.tick();
 
-  for (int i = 0; i < kNumTabs; ++i) tabBtns_[i].tick();
+  auto btnState = tabBtns_.tick();
+  for (int i = 0; i < btnState.rising.size(); ++i) {
+    if (!btnState.rising.test(i)) {
+      continue;
+    }
+    if (i == currentTab_) {
+      advancePage_();
+    } else {
+      selectTab_(i);
+    }
+  }
 
   const uint32_t now = millis();
   if (now - tPrev_ < ucfg_.pollMs) return;
@@ -226,19 +234,6 @@ void UI::onPress_(void* param) {
   ++(self->ucfg_.pCfg->trigCounter);
   self->triggerLED.FadeOff(
       dsp::rateToMs(self->ucfg_.env(CH::EnvAmp).decay, CalcisTR::SR));
-}
-
-// ---------- tab press (select or advance) ----------
-void UI::onTabPress_(void* param) {
-  auto* ctx = reinterpret_cast<TabCtx*>(param);
-  UI* self = ctx->self;
-  const uint8_t idx = ctx->idx;
-
-  if (idx == self->currentTab_) {
-    self->advancePage_();
-  } else {
-    self->selectTab_(idx);
-  }
 }
 
 // ---------- select tab / advance page / LEDs (unchanged logic) ----------

@@ -21,13 +21,13 @@ void setup() {
 }
 
 void loop() {
-  ZLKM_PERF_SCOPE_N("core0.loop", 1000);
   App::core0_loop();  // UI tick on core 0
+  Profiler::instance().tick_and_log(millis());
 }
 
 void setup1() { App::core1_start(); }
 
 void loop1() {
+  ZLKM_PERF_SCOPE_N("core1.loop(audio)", 1000);
   App::core1_loop();  // audio tick on core 1
-  Profiler::instance().tick_and_log(millis());
 }

@@ -1,10 +1,9 @@
 #pragma once
-#include <Arduino.h>
 
 #include <array>
 #include <bitset>
 
-#include "Types.h"
+#include "hw/io/Types.h"
 
 namespace zlkm::hw::io {
 
@@ -44,6 +43,13 @@ class GpioPins {
     Bits out;
     for (size_t i = 0; i < N; ++i)
       if (::digitalRead(pins_[i])) out.set(i);
+    return out;
+  }
+
+  template <size_t K>
+  inline std::bitset<K> readPins(const std::array<uint8_t, K>& idxs) const {
+    std::bitset<K> out;
+    for (int i = 0; i < K; ++i) out.set(i, readPin(idxs[i]));
     return out;
   }
 
