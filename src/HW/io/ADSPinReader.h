@@ -9,9 +9,7 @@
 /* Owns + initializes an ADS device in the constructor and provides          */
 /* readVolts(). Device is typically Adafruit_ADS1015 or Adafruit_ADS1115.    */
 
-namespace zlkm {
-
-namespace hw {
+namespace zlkm::hw::io {
 
 template <class Device>
 class ADSPinReader {
@@ -71,6 +69,4 @@ class ADSPinReader {
 
 using ADS1015Reader = ADSPinReader<Adafruit_ADS1015>;
 
-}  // namespace hw
-
-}  // namespace zlkm
+}  // namespace zlkm::hw::io

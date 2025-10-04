@@ -15,7 +15,13 @@ UI::UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
       encs_(pio0, ucfg_.encPinsA, ucfg_.encClkDiv),
       screen_(ScreenSSD::Cfg()),
       saver_(SSaver::Cfg{}),
-      idle_(ucfg_.screenIdleMs) {
+      idle_(ucfg_.screenIdleMs),
+      pinExp_(hw::io::I2cCfg{.address = 0x20,
+                             .wire = &Wire,
+                             .clockHz = 400000,
+                             .i2cSDA = 20,  // e.g. Pico pins
+                             .i2cSCL = 21},
+              hw::io::PinMode::Output) {
   initTabs_();
   seedRawFromCfg_();
 
@@ -152,13 +158,11 @@ void UI::processRotary_(int id) {
 // ---------- init tabs (OneButton) ----------
 void UI::initTabs_() {
   // LEDs
-  for (int i = 0; i < kNumTabs; ++i) {
-    pinMode(ucfg_.tabLedPins[i], OUTPUT);
-    digitalWrite(ucfg_.tabLedPins[i], LOW);
-  }
+  pinExp_.writeAll(LOW);
 
   // OneButton for each tab button (INPUT_PULLUP, activeLow=true)
   for (int i = 0; i < kNumTabs; ++i) {
+    tabLeds_[i] = i;
     tabBtns_[i] = OneButton(ucfg_.tabBtnPins[i], /*activeLow=*/false,
                             /*pullupActive=*/false);
     tabBtns_[i].setDebounceMs(3);
@@ -264,18 +268,18 @@ void UI::advancePage_() {
 
 void UI::updateLeds_() {
   for (uint8_t i = 0; i < kNumTabs; ++i) {
-    digitalWrite(ucfg_.tabLedPins[i], (i == currentTab_) ? HIGH : LOW);
+    pinExp_.writePin(tabLeds_[i], (i == currentTab_) ? HIGH : LOW);
   }
 }
 
 void UI::blinkLed_(uint8_t tab, uint8_t count) {
-  const uint8_t pin = ucfg_.tabLedPins[tab];
+  const uint8_t pin = tabLeds_[tab];
   digitalWrite(pin, LOW);
   delay(100);
   for (uint8_t n = 0; n < count; ++n) {
-    digitalWrite(pin, HIGH);
+    pinExp_.writePin(pin, HIGH);
     delay(100);
-    digitalWrite(pin, LOW);
+    pinExp_.writePin(pin, LOW);
     delay(100);
   }
   if (tab == currentTab_) digitalWrite(pin, HIGH);

@@ -5,6 +5,9 @@
 .pio/build/
 .pio/libdeps/
 
+# generated files
+*.pio.gen.h
+
 # VS Code user data
 .vscode
 

@@ -9,6 +9,7 @@
 #include "CalcisHumilis.h"
 #include "audio/AudioTraits.h"
 #include "hw/Screen.h"
+#include "hw/io/McpPins.h"
 #include "hw/pico/QuadManagerPio.h"
 #include "hw/screensavers/SaverMux.h"
 #include "hw/screensavers/StarField.h"
@@ -143,7 +144,6 @@ class UI {
     static constexpr int kNumTabs = 4;
 
     std::array<uint8_t, kNumTabs> tabBtnPins{15, 16, 17, 18};  // GP14..GP17
-    std::array<uint8_t, kNumTabs> tabLedPins{19, 20, 21, 22};  // GP18..GP21
     std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
 
     // Scanning/timing
@@ -180,6 +180,7 @@ class UI {
   OneButton trigBtn_;
   static constexpr int kNumTabs = Cfg::kNumTabs;
   std::array<OneButton, kNumTabs> tabBtns_;
+  std::array<uint8_t, kNumTabs> tabLeds_;
   struct TabCtx {
     UI* self;
     uint8_t idx;
@@ -211,6 +212,9 @@ class UI {
   ScreenSSD screen_;
   util::IdleTimer idle_;
   SSaver saver_;
+
+  using PinExpander = hw::io::Mcp23017Pins;
+  PinExpander pinExp_;
 
   void tickLED();
 
