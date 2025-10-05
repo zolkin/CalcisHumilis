@@ -14,31 +14,28 @@ class SwarmMorph {
   static constexpr float INV_SR_F = 1.f / float(SR);
 
  public:
- 
-struct Cfg {
-  // Some dirty tricks here!!
-  static constexpr int INTERPOLATABLE_PARAMS = 5;
-  float* i_begin() { return &detuneMul; }
-  std::array<float, INTERPOLATABLE_PARAMS> const& asTarget() const {
-    return *reinterpret_cast<std::array<float, INTERPOLATABLE_PARAMS> const*>(
-        &detuneMul);
-  }
+  struct Cfg {
+    // Some dirty tricks here!!
+    static constexpr int INTERPOLATABLE_PARAMS = 5;
+    float* i_begin() { return &detuneMul; }
+    std::array<float, INTERPOLATABLE_PARAMS> const& asTarget() const {
+      return *reinterpret_cast<std::array<float, INTERPOLATABLE_PARAMS> const*>(
+          &detuneMul);
+    }
 
-  float detuneMul = 1.2599f;  // spread per ring (p+-p*c, p+-2*p*c…)
-  float stereoSpread = 0.6f;  // 0..1 width
-  float gainBase = 0.6f;      // center weight: base^ring
-  float morph = 0.166666f;    // 0=sine..1=saw morph
-  float pulseWidth = 0.4f;    // square duty cycle
+    float detuneMul = 1.2599f;  // spread per ring (p+-p*c, p+-2*p*c…)
+    float stereoSpread = 0.6f;  // 0..1 width
+    float gainBase = 0.6f;      // center weight: base^ring
+    float morph = 0.166666f;    // 0=sine..1=saw morph
+    float pulseWidth = 0.4f;    // square duty cycle
 
-  // Set immediately
-  int voices = 7;        // 1..N
-  int morphMode;         // 0 -> Morph, 1 -> Switch between waveforms (debug)
-  bool randomPhase = 1;  // randomize start phase, int
-};
+    // Set immediately
+    int voices = 7;        // 1..N
+    int morphMode;         // 0 -> Morph, 1 -> Switch between waveforms (debug)
+    bool randomPhase = 1;  // randomize start phase, int
+  };
 
-  explicit SwarmMorph(const Cfg& c) : cfg_(c) {
-    cfgUpdated();
-  }
+  explicit SwarmMorph(const Cfg& c) : cfg_(c) { cfgUpdated(); }
 
   void cfgUpdated() {
     for (int i = 0; i < cfg_.voices; ++i) {
@@ -56,29 +53,40 @@ struct Cfg {
 
   inline void tickStereo(const float cyclesPerSample, const float swarmEnv,
                          const float morphEnv, float& outL, float& outR) {
+    ZLKM_PERF_SCOPE_SAMPLED("Swarm::tickStereo", 6);
     const int VN = cfg_.voices;
     const float c0 = cyclesPerSample;
     osc_.mode = (typename MorphOsc::Mode)cfg_.morphMode;
 
-    for (int i = 0; i < VN; ++i) {
-      osc_.state[i].cyclesPerSample =
-          c0 * detuneMul_[i] * math::interpolate(1.f, detuneMul_[i], swarmEnv);
-      osc_.state[i].morph = cfg_.morph + (1.f - cfg_.morph) * morphEnv;
+    {
+      ZLKM_PERF_SCOPE_SAMPLED("detune", 6);
+      for (int i = 0; i < VN; ++i) {
+        osc_.state[i].cyclesPerSample =
+            c0 * detuneMul_[i] *
+            math::interpolate(1.f, detuneMul_[i], swarmEnv);
+        osc_.state[i].morph = cfg_.morph + (1.f - cfg_.morph) * morphEnv;
+      }
     }
 
-    osc_.tick(tmp_);
-
-    float L = 0.f, R = 0.f;
-    // per sample (or control-rate), e in [0..1]
-    const float kEqualPan = 0.70710678f;  // 1/sqrt(2)
-    for (int i = 0; i < VN; ++i) {
-      const float v = gains_[i] * tmp_[i];
-      L += v * math::interpolate(kEqualPan, panL_[i], swarmEnv);
-      R += v * math::interpolate(kEqualPan, panR_[i], swarmEnv);
+    {
+      ZLKM_PERF_SCOPE_SAMPLED("oscillators", 6);
+      osc_.tick(tmp_);
     }
 
-    outL = L;
-    outR = R;
+    {
+      ZLKM_PERF_SCOPE_SAMPLED("panning", 6);
+      float L = 0.f, R = 0.f;
+      // per sample (or control-rate), e in [0..1]
+      const float kEqualPan = 0.70710678f;  // 1/sqrt(2)
+      for (int i = 0; i < VN; ++i) {
+        const float v = gains_[i] * tmp_[i];
+        L += v * math::interpolate(kEqualPan, panL_[i], swarmEnv);
+        R += v * math::interpolate(kEqualPan, panR_[i], swarmEnv);
+      }
+
+      outL = L;
+      outR = R;
+    }
   }
 
   Cfg& cfg() { return cfg_; }
@@ -159,4 +167,4 @@ struct Cfg {
   std::array<float, N> panL_{}, panR_{};
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::audio::engine

@@ -42,6 +42,8 @@ static inline void array_float_to_int32(const std::array<float, N> &src,
 
 template <class TR>
 void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
+  ZLKM_PERF_SCOPE("CalcisHumilis<TR>::fillBlock");
+
   using namespace zlkm::mod;
 
   if (cfg_->trigCounter > trigCounter_) {
@@ -61,11 +63,19 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
 
   IntBuffer buffer;
   for (size_t i = 0; i < TR::BLOCK_FRAMES; ++i) {
-    envelopes_.update();
-    swarmCfgItp.update();
-    calcisCfgItp.update();
-    filterCfgItp.update();
-    swarm.cfgUpdated();
+    {
+      ZLKM_PERF_SCOPE("envelopes");
+      envelopes_.update();
+    }
+
+    {
+      ZLKM_PERF_SCOPE("interpolators");
+      swarmCfgItp.update();
+      calcisCfgItp.update();
+      filterCfgItp.update();
+
+      swarm.cfgUpdated();
+    }
 
     const float g = outGain_;
 
@@ -89,17 +99,24 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
 
     swarm.tickStereo(cyclesPerSample_ * (1.f + p), sw, m, l, r);
 
-    l = filterL.process(l, fCfg_);
-    r = filterR.process(r, fCfg_);
+    {
+      ZLKM_PERF_SCOPE_SAMPLED("filter", 6);
+      l = filterL.process(l, fCfg_);
+      r = filterR.process(r, fCfg_);
+    }
 
-    l = softClip(l * a * g);
-    r = softClip(r * a * g);
+    {
+      ZLKM_PERF_SCOPE_SAMPLED("clip", 6);
+      l = softClip(l * a * g);
+      r = softClip(r * a * g);
+    }
   }
 
   if constexpr (TR::BITS == 24) {
     // dstLR[2 * i + 0] = (int32_t)lrintf(outL * 8388607.0f) << 8;
     // dstLR[2 * i + 1] = (int32_t)lrintf(outR * 8388607.0f) << 8;
   } else if constexpr (TR::BITS == 32) {
+    ZLKM_PERF_SCOPE_SAMPLED("array_float_to_int32", 6);
     array_float_to_int32(buffer, destLR);
   }
 }
