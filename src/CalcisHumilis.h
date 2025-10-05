@@ -7,10 +7,10 @@
 #include <Arduino.h>
 #include <Stream.h>
 
-#include "mod/ADEnvelopes.h"
 #include "audio/DJFilter.h"
 #include "audio/MorphOsc.h"
 #include "audio/engine/Swarm.h"
+#include "mod/ADEnvelopes.h"
 
 namespace zlkm::ch {
 
@@ -26,7 +26,11 @@ class CalcisHumilis {
   static constexpr float INV_SR = 1.f / float(SR);
 
  public:
+#ifdef DEBUG
+  static constexpr int MAX_SWARM_VOICES = 8;
+#else
   static constexpr int MAX_SWARM_VOICES = 16;
+#endif
 
   static constexpr float rate(float ms) { return dsp::msToRate(ms, SR); }
   static constexpr float cycles(float hz) { return hz * INV_SR; }
@@ -113,6 +117,6 @@ class CalcisHumilis {
   int trigCounter_ = 0;
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::ch
 
 #include "CalcisHumilis_impl.hh"
