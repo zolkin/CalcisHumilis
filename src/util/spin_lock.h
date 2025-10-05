@@ -2,7 +2,7 @@
 #include <atomic>
 #include <mutex>
 
-namespace zlkm {
+namespace zlkm::util {
 
 // Template on the atomic class (defaults to std::atomic).
 // Pass std::atomic explicitly if you like: zlkm::spin_lock<std::atomic>

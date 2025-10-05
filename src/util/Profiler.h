@@ -7,7 +7,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace zlkm {
+namespace zlkm::util {
 
 // ---------- Profiler singleton (avg + min + max) ----------
 class Profiler {
@@ -155,11 +155,12 @@ class PerfCounter {
   uint16_t id_;
 };
 
+}  // namespace zlkm::util
+
+
 // ---------- Convenience macros ----------
-#define ZLKM_PERF_SCOPE_N(NAME, N)                         \
-  static ::zlkm::PerfCounter<N> _zlkm_pc_##__LINE__{NAME}; \
+#define ZLKM_PERF_SCOPE_N(NAME, N)                               \
+  static ::zlkm::util::PerfCounter<N> _zlkm_pc_##__LINE__{NAME}; \
   auto _zlkm_scope_##__LINE__ = _zlkm_pc_##__LINE__.scope()
 
 #define ZLKM_PERF_SCOPE(NAME) ZLKM_PERF_SCOPE_N(NAME, 1000)
-
-}  // namespace zlkm

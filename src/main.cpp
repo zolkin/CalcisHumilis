@@ -1,9 +1,11 @@
-#include "app\Main.h"  // your dual-core harness (header-only)
+#include "app/Main.h"
 
 #include <Arduino.h>
 
 #include "audio/AudioCore.h"
 #include "util/Profiler.h"
+
+// this needs to come last
 #include "UI.h"
 
 using namespace audio_tools;
@@ -22,7 +24,7 @@ void setup() {
 
 void loop() {
   App::core0_loop();  // UI tick on core 0
-  Profiler::instance().tick_and_log(millis());
+  util::Profiler::instance().tick_and_log(millis());
 }
 
 void setup1() { App::core1_start(); }

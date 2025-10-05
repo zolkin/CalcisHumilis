@@ -65,22 +65,22 @@ class MainApp {
   }
 
   void snapAudioCfg() {
-    sl_guard guard{cfgSL_};
+    util::sl_guard guard{cfgSL_};
     audioCfg_ = sharedCfg_;
   }
 
   void publishAudioCfg() {
-    sl_guard guard{cfgSL_};
+    util::sl_guard guard{cfgSL_};
     sharedCfg_ = uiAudioCfg_;
   }
 
   void publishUIFeedback() {
-    sl_guard guard{fbSL_};
+    util::sl_guard guard{fbSL_};
     sharedFb_ = audioUiFb_;
   }
 
   void snapUIFeedback() {
-    sl_guard guard{fbSL_};
+    util::sl_guard guard{fbSL_};
     uiFb_ = sharedFb_;
   }
 
@@ -94,12 +94,12 @@ class MainApp {
   using Cfg = typename AudioSource::Cfg;
   using Feedback = typename AudioSource::Feedback;
 
-  spin_lock cfgSL_;
+  util::spin_lock cfgSL_;
   Cfg sharedCfg_{};
   Cfg audioCfg_{};
   Cfg uiAudioCfg_{};
 
-  spin_lock fbSL_;
+  util::spin_lock fbSL_;
   Feedback sharedFb_{};
   Feedback audioUiFb_{};
   Feedback uiFb_{};
