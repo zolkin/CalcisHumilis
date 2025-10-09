@@ -5,23 +5,24 @@
 // to minimize changes elsewhere in the codebase.
 
 #include <Arduino.h>
+#include <JLED.h>
 
 #include <array>
+#include <memory>
 
 #include "CalcisHumilis.h"
 #include "audio/AudioTraits.h"
+#include "dsp/Util.h"
 #include "hw/Screen.h"
 #include "hw/io/ButtonManager.h"
+#include "hw/io/GpioPins.h"
 #include "hw/io/McpPins.h"
 #include "hw/io/QuadManagerIO.h"
-#include "hw/screensavers/SaverMux.h"
-#include "hw/screensavers/StarField.h"
-#include "hw/screensavers/ThroughTheStars.h"
 #include "ui/Controller.h"
-#include "ui/InputSampler.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"
 #include "ui/View.h"
+#include "util/Profiler.h"
 
 namespace zlkm::ch {
 
@@ -29,11 +30,22 @@ class UI {
  public:
   using CH = Calcis;
   static constexpr float cyc(float p) { return Calcis::cycles(p); }
+  using CalcisTR = zlkm::ch::CalcisTR;
+
+  static constexpr size_t kMaxPagesPerTab = 4;  // define sizes explicitly here
+  static constexpr size_t kRotaryCount = 4;
+
+  using Selection =
+      ::zlkm::ui::ParameterTabControlT<4, kMaxPagesPerTab, kRotaryCount>;
 
   using PinExpander = hw::io::Mcp23017Pins;
+  using Sampler = hw::io::QuadManagerIO<PinExpander, kRotaryCount>;
+  using ControllerT = ::zlkm::ui::Controller<Sampler, Selection::count(),
+                                             kMaxPagesPerTab, kRotaryCount>;
+  using ViewT = ::zlkm::ui::View<Selection>;
+
   using TabButtons = hw::io::ButtonManager<4, PinExpander>;
-  using Encoders =
-      hw::io::QuadManagerIO<PinExpander, ParameterPage::ROTARY_COUNT>;
+  using Encoders = hw::io::QuadManagerIO<PinExpander, kRotaryCount>;
 
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
@@ -41,61 +53,28 @@ class UI {
     CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
 
     Cfg(const Cfg&) = delete;
-    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = {4, 5, 6, 7}} {
-      rotaryTabs[TabSrc].enabled = true;
-      rotaryTabs[TabSrc].pages[0] = ParameterPage{
-          {
-              {cyc(65.f), cyc(260.f), RotaryInputSpec::RsLin,
-               &pCfg->cyclesPerSample},
-              {20.f, 2000.f, RotaryInputSpec::RsRate, &env(CH::EnvAmp).decay},
-              {2.f, 80.f, RotaryInputSpec::RsRate, &env(CH::EnvPitch).decay},
-              {0.f, 1.f, RotaryInputSpec::RsLin, &pCfg->outGain},
-          },
-          true};
+    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = {4, 5, 6, 7}} {}
 
-      auto& sw = pCfg->swarmOsc;
-      rotaryTabs[TabSrc].pages[1] = ParameterPage{
-          {
-              {0.01f, 0.99f, RotaryInputSpec::RsLin, &sw.pulseWidth},
-              {0.f, 1.f, RotaryInputSpec::RsLin, &sw.morph},
-              {1.f, 1.05946f, RotaryInputSpec::RsLin, &sw.detuneMul},
-              {0.f, 1.f, RotaryInputSpec::RsLin, &sw.stereoSpread},
-          },
-          true};
-      rotaryTabs[TabSrc].pages[2] = ParameterPage{
-          {
-              {1.f, Calcis::MAX_SWARM_VOICES, RotaryInputSpec::RsInt,
-               &sw.voices},
-              {0.f, 1.f, RotaryInputSpec::RsInt, &sw.morphMode},
-              {0.f, 1.f, RotaryInputSpec::RsBool, &sw.randomPhase},
-              {0.f, 1.f, RotaryInputSpec::RsLin, nullptr},
-          },
-          true};
-
-      rotaryTabs[TabFilter].enabled = true;
-      rotaryTabs[TabFilter].pages[0] =
-          ParameterPage{{
-                            {0.f, 1.f, RotaryInputSpec::RsKDamp, &pCfg->filter},
-                            {0.f, 1.f, RotaryInputSpec::RsGCut, &pCfg->filter},
-                            {0.f, 1.f, RotaryInputSpec::RsMorph, &pCfg->filter},
-                            {0.f, 1.f, RotaryInputSpec::RsDrive, &pCfg->filter},
-                        },
-                        true};
-    }
-
-    uint8_t trigPin = 26;
     static constexpr int kNumTabs = 4;
+
     TabButtons::Cfg tabBtns;
+
     std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
-    uint16_t pollMs = 5;
+    std::array<uint8_t, kRotaryCount> encPinsA{0, 2, 4, 13};
+
+    // ParameterTab rotaryTabs[kNumTabs];
+
+    Calcis::Cfg* pCfg;
+
     float snapMultiplier = 0.0f;
     float activityThresh = 32.f;
-    Calcis::Cfg* pCfg;
-    std::array<uint8_t, ParameterPage::ROTARY_COUNT> encPinsA{0, 2, 4, 13};
     float encClkDiv = 50.0f;
     uint32_t screenIdleMs = 10000;
-    ParameterTab rotaryTabs[kNumTabs];
+    uint16_t pollMs = 5;
+    uint8_t trigPin = 26;
   };
+
+  using ViewCfg = typename ViewT::Cfg;
 
   explicit UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
       : ucfg_(cfg),
@@ -106,44 +85,98 @@ class UI {
                                .i2cSDA = 20,
                                .i2cSCL = 21},
                 hw::io::PinMode::Output),
-        sampler_(pinExp_,
-                 typename Sampler::Cfg{.encCfg = {.pinsA = {8, 10, 12, 14},
-                                                  .pinsB = {9, 11, 13, 15},
-                                                  .usePullUp = true},
-                                       .pollUs = 1000}),
-        view_(&pinExp_, &selection_,
-              typename ViewT::Cfg{.tabBtns = ucfg_.tabBtns, .fps = 60}),
-        controller_(ucfg_.pCfg, fb_, &selection_, &sampler_) {
-    loadSpecsFromCfg_();
+        sampler_(pinExp_, typename Sampler::Cfg{.pinsA = {8, 10, 12, 14},
+                                                .pinsB = {9, 11, 13, 15},
+                                                .usePullUp = true}),
+        selection_(),
+        controller_(
+            *ucfg_.pCfg, pinExp_, ucfg_.tabBtns, *fb_, sampler_, selection_,
+            ucfg_.trigPin,
+            zlkm::hw::io::ButtonManager<1, zlkm::hw::io::GpioPins<1>>::Cfg{
+                .pins = {0},
+                .activeLow = true,
+                .usePullUp = true,
+                .debounceTicks = 5}),
+        view_(selection_, pinExp_,
+              ViewCfg{.ledPins_ = {0, 1, 2, 3}, .fps = 60, .pCfg = ucfg_.pCfg},
+              fb_) {
+    initSpecs();
     controller_.seedFromCfg();
+    // Move expander-backed buttons/LEDs to Controller; keep expander here
   }
 
   // Legacy UI API: update does UI and also ticks sampler
   void update() {
-    sampler_.tick();
-    if (uiProcessesInputs_) controller_.process();
-    view_.update();
+    ZLKM_PERF_SCOPE("UI update");
+    // Trigger button handled in controller
+    sampler_.update();
+    processInputs();
+    view_.update(controller_.hasActivity());
   }
-
-  // New: processing to be called from audio loop/core
-  void processInputs() { controller_.process(); }
-
-  // When wiring audio loop, call setUiProcessesInputs(false)
-  void setUiProcessesInputs(bool enabled) { uiProcessesInputs_ = enabled; }
+  void processInputs() { controller_.update(); }
 
  private:
   // Selection (tabs/pages) used by both controller and view
-  using ProcPage = zlkm::ui::ProcPage;
-  using TabSrc = zlkm::ui::Tab<ProcPage, ProcPage, ProcPage>;
-  using TabFilter = zlkm::ui::Tab<ProcPage>;
-  using Selection = zlkm::ui::TabControl<TabSrc, TabFilter>;
+  void initSpecs() {
+    using PPage = ::zlkm::ui::ParameterPageT<kRotaryCount>;
+    // Tab 0: Source
+    auto& t0 = selection_.tabs[0];
+    t0.pageCount = 3;
+    t0.currentPage = 0;
+    // Page 0
+    {
+      auto& p0 = t0.pages[0];
+      p0.rotary[0] = {Calcis::cycles(65.f), Calcis::cycles(260.f),
+                      zlkm::ch::RotaryInputSpec::RsLin,
+                      &ucfg_.pCfg->cyclesPerSample};
+      p0.rotary[1] = {20.f, 2000.f, zlkm::ch::RotaryInputSpec::RsRate,
+                      &ucfg_.pCfg->envs[CH::EnvAmp].decay};
+      p0.rotary[2] = {2.f, 80.f, zlkm::ch::RotaryInputSpec::RsRate,
+                      &ucfg_.pCfg->envs[CH::EnvPitch].decay};
+      p0.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin,
+                      &ucfg_.pCfg->outGain};
+    }
+    // Page 1
+    {
+      auto& p1 = t0.pages[1];
+      auto& sw = ucfg_.pCfg->swarmOsc;
+      p1.rotary[0] = {0.01f, 0.99f, zlkm::ch::RotaryInputSpec::RsLin,
+                      &sw.pulseWidth};
+      p1.rotary[1] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin, &sw.morph};
+      p1.rotary[2] = {1.f, 1.05946f, zlkm::ch::RotaryInputSpec::RsLin,
+                      &sw.detuneMul};
+      p1.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin,
+                      &sw.stereoSpread};
+    }
+    // Page 2
+    {
+      auto& p2 = t0.pages[2];
+      auto& sw = ucfg_.pCfg->swarmOsc;
+      p2.rotary[0] = {1.f, CH::MAX_SWARM_VOICES,
+                      zlkm::ch::RotaryInputSpec::RsInt, &sw.voices};
+      p2.rotary[1] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsInt,
+                      &sw.morphMode};
+      p2.rotary[2] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsBool,
+                      &sw.randomPhase};
+      p2.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin, nullptr};
+    }
 
-  using Sampler =
-      zlkm::ui::InputSampler<hw::io::Mcp23017Pins, ParameterPage::ROTARY_COUNT>;
-  using ControllerT =
-      zlkm::ui::Controller<hw::io::Mcp23017Pins, ParameterPage::ROTARY_COUNT,
-                           TabSrc, TabFilter>;
-  using ViewT = zlkm::ui::View<Selection>;
+    // Tab 1: Filter
+    auto& t1 = selection_.tabs[1];
+    t1.pageCount = 1;
+    t1.currentPage = 0;
+    {
+      auto& p = t1.pages[0];
+      p.rotary[0] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsKDamp,
+                     &ucfg_.pCfg->filter};
+      p.rotary[1] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsGCut,
+                     &ucfg_.pCfg->filter};
+      p.rotary[2] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsMorph,
+                     &ucfg_.pCfg->filter};
+      p.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsDrive,
+                     &ucfg_.pCfg->filter};
+    }
+  }
 
   Cfg ucfg_;
   Calcis::Feedback* fb_{};
@@ -151,48 +184,12 @@ class UI {
   // Hardware pieces reused
   hw::io::Mcp23017Pins pinExp_;
 
-  // Shared selection state
-  Selection selection_{};
-
   // Components
+  Selection selection_;
   Sampler sampler_;
-  ViewT view_;
   ControllerT controller_;
-  bool uiProcessesInputs_ = true;
+  ViewT view_;
 
-  void loadSpecsFromCfg_() {
-    // Tab 0: Source, 3 pages
-    auto& t0 = std::get<0>(selection_.tabs);
-    {
-      // page 0
-      auto& dst0 = std::get<0>(t0.pages);
-      auto& src0 = ucfg_.rotaryTabs[Cfg::TabSrc].pages[0];
-      dst0.enabled = src0.enabled;
-      for (int i = 0; i < ParameterPage::ROTARY_COUNT; ++i)
-        dst0.spec[i] = src0.rotary[i];
-      // page 1
-      auto& dst1 = std::get<1>(t0.pages);
-      auto& src1 = ucfg_.rotaryTabs[Cfg::TabSrc].pages[1];
-      dst1.enabled = src1.enabled;
-      for (int i = 0; i < ParameterPage::ROTARY_COUNT; ++i)
-        dst1.spec[i] = src1.rotary[i];
-      // page 2
-      auto& dst2 = std::get<2>(t0.pages);
-      auto& src2 = ucfg_.rotaryTabs[Cfg::TabSrc].pages[2];
-      dst2.enabled = src2.enabled;
-      for (int i = 0; i < ParameterPage::ROTARY_COUNT; ++i)
-        dst2.spec[i] = src2.rotary[i];
-    }
-    // Tab 1: Filter, 1 page
-    auto& t1 = std::get<1>(selection_.tabs);
-    {
-      auto& dst = std::get<0>(t1.pages);
-      auto& src = ucfg_.rotaryTabs[Cfg::TabFilter].pages[0];
-      dst.enabled = src.enabled;
-      for (int i = 0; i < ParameterPage::ROTARY_COUNT; ++i)
-        dst.spec[i] = src.rotary[i];
-    }
-  }
-};
+};  // class UI
 
 }  // namespace zlkm::ch

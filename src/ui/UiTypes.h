@@ -44,16 +44,4 @@ struct RotaryInputSpec {
   }
 };
 
-struct ParameterPage {
-  static constexpr int ROTARY_COUNT = 4;
-  RotaryInputSpec rotary[ROTARY_COUNT];
-  bool enabled = false;
-};
-
-struct ParameterTab {
-  static constexpr int MAX_PAGE = 4;
-  ParameterPage pages[MAX_PAGE];
-  bool enabled = false;
-};
-
 }  // namespace zlkm::ch

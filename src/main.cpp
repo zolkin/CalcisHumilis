@@ -6,12 +6,13 @@
 #include "util/Profiler.h"
 
 // this needs to come last
-#include "UI.h"
+#include "ui/UI.h"
 
 using namespace audio_tools;
 using namespace zlkm;
 using namespace zlkm::ch;
 using namespace zlkm::util;
+using namespace zlkm::ui;
 
 using MyAudioCore = audio::AudioCore<CalcisTR, CalcisHumilis>;
 using App = app::MainApp<MyAudioCore, UI>;

@@ -1,4 +1,6 @@
 #pragma once
+#include <Arduino.h>
+
 #include <array>
 #include <bitset>
 
@@ -41,6 +43,7 @@ class QuadManagerIO {
       const uint8_t a = bits.test(i) ? 1 : 0;
       const uint8_t b = bits.test(N + i) ? 1 : 0;
       enc_[i].prev = (uint8_t)((a << 1) | b);  // A as MSb, B as LSb
+      enc_[i].delta = 0;
     }
   }
 
@@ -62,21 +65,37 @@ class QuadManagerIO {
       if (e.prev <= 3) {
         const uint8_t idx = (uint8_t)((e.prev << 2) | curr);
         const int8_t d = kDecodeLUT[idx];
-        if (d) e.count += e.invert ? -d : d;
+        if (d) e.delta += e.invert ? -d : d;
       }
       e.prev = curr;
     }
   }
 
-  // API like your PIO class
-  inline int32_t read(int idx) const { return enc_[idx].count; }
-  inline void write(int idx, int32_t pos) { enc_[idx].count = pos; }
+  // Invert encoder direction
   inline void invert(int idx, bool inv) { enc_[idx].invert = inv; }
+
+  // Return delta since last consume for this encoder and update baseline
+  inline int32_t consumeDeltaCounts(int idx) {
+    int32_t d = enc_[idx].delta;
+    enc_[idx].delta = 0;
+    return d;
+  }
+
+  // Reset baselines to current counts (e.g., when changing page/tab)
+  inline void resetBaselines() {
+    auto bits = dev_.template readPins<2 * N>(readOrder_);
+    for (int i = 0; i < N; ++i) {
+      const uint8_t a = bits.test(i) ? 1 : 0;
+      const uint8_t b = bits.test(N + i) ? 1 : 0;
+      enc_[i].prev = (uint8_t)((a << 1) | b);
+      enc_[i].delta = 0;
+    }
+  }
 
  private:
   struct Enc {
     uint8_t prev = 0xFF;  // previous 2-bit state (A<<1 | B)
-    int32_t count = 0;
+    int32_t delta = 0;    // unread delta since last consume
     bool invert = false;
   };
 
