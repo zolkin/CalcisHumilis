@@ -2,7 +2,7 @@
 
 // ==== Build-time config (override via build_flags) ====
 #ifndef ZLKM_PROFILE_PERIOD_MS
-#define ZLKM_PROFILE_PERIOD_MS 2000  // print snapshot every N ms
+#define ZLKM_PROFILE_PERIOD_MS 20000  // print snapshot every N ms
 #endif
 #ifndef ZLKM_PROFILE_EMIT_THREAD
 #define ZLKM_PROFILE_EMIT_THREAD \

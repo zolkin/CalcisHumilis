@@ -13,6 +13,7 @@
 #include "hw/screensavers/ThroughTheStars.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"  // aliases: ScreenSSD
+#include "ui/assets/ring16x16_48.h"
 
 namespace zlkm::ui {
 
@@ -77,22 +78,57 @@ class View {
     {
       ZLKM_PERF_SCOPE("screen update");
       screen_.update([&](U8G2& g) {
+        using namespace zlkm::ui::assets;
         if (saver_.step(now, g)) {
           return;
         }
-        g.setFont(u8g2_font_6x12_tf);
-        g.drawStr(1, 12, "Calcis Humilis");
-        // Show current tab/page (1-based) and totals
-        char buf[64];
+        // Fetch current page values
         const uint8_t tabIdx = selection_.currentTabIndex();
-        const uint8_t tabTotal = Selection::count();
         const uint8_t pageIdx = selection_.currentPageIndex();
+        const auto& t = selection_.tabAt(tabIdx);
+        const auto& page = t.pages[pageIdx];
+
+        // Draw encoder rings in corners (bitmap atlas)
+        const int w = screen_.width();
+        const int h = screen_.height();
+        const int margin = 3;
+        const int rw = RING16_W;
+        const int rh = RING16_H;
+        auto lvl = [](int raw) -> uint8_t {
+          int v = (raw * RING16_STEPS + 2047) / 4095;
+          if (v > RING16_STEPS) v = RING16_STEPS;
+          return static_cast<uint8_t>(v);
+        };
+        g.setBitmapMode(1);  // transparent
+        g.drawXBMP(margin, margin, rw, rh,
+                   ring16x16_frame(lvl(page.rawPos[0])));
+        g.drawXBMP(w - margin - rw, margin, rw, rh,
+                   ring16x16_frame(lvl(page.rawPos[1])));
+        g.drawXBMP(margin, h - margin - rh, rw, rh,
+                   ring16x16_frame(lvl(page.rawPos[2])));
+        g.drawXBMP(w - margin - rw, h - margin - rh, rw, rh,
+                   ring16x16_frame(lvl(page.rawPos[3])));
+
+        // Centered text and page info
+        g.setFont(u8g2_font_5x8_tf);
+        const char* title = "CalcisHumilis";
+        int tw = g.getStrWidth(title);
+        int tx = (w - tw) / 2;
+        int ty = h / 2 - 2;
+        g.drawStr(tx, ty, title);
+
+        char buf[64];
+        const uint8_t tabTotal = Selection::count();
         const uint8_t pageTotal = selection_.currentTabPageCount();
-        snprintf(buf, sizeof(buf), "Tab %u/%u  Page %u/%u",
-                 (unsigned)(tabIdx + 1), (unsigned)tabTotal,
-                 (unsigned)(pageIdx + 1), (unsigned)pageTotal);
-        g.drawStr(1, 24, buf);
-        g.drawFrame(0, 0, screen_.width(), screen_.height());
+        snprintf(buf, sizeof(buf), "Tab %u/%u", (unsigned)(tabIdx + 1),
+                 (unsigned)tabTotal);
+        int tabw = g.getStrWidth(buf);
+        g.drawStr((w - tabw) / 2, ty + 14, buf);
+
+        snprintf(buf, sizeof(buf), "Page %u/%u", (unsigned)(pageIdx + 1),
+                 (unsigned)pageTotal);
+        int pw = g.getStrWidth(buf);
+        g.drawStr((w - pw) / 2, ty + 28, buf);
       });
     }
     tickLED_();
@@ -116,6 +152,8 @@ class View {
       saturationCounter_ = fb_->saturationCounter;
     }
   }
+
+  // Procedural ring renderer removed in favor of precomputed bitmaps
 
   ScreenT screen_;
   Selection& selection_;
