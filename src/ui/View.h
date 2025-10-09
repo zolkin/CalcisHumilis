@@ -65,44 +65,38 @@ class View {
     using namespace zlkm::dsp;
     if (cfg_.pCfg->trigCounter != lastTrigCounter_) {
       lastTrigCounter_ = cfg_.pCfg->trigCounter;
-      onTrigger(rateToMs(cfg_.pCfg->envs[Calcis::EnvAmp].decay, CalcisTR::SR));
+      const uint16_t fadeMs =
+          rateToMs(cfg_.pCfg->envs[Calcis::EnvAmp].decay, CalcisTR::SR);
+      triggerLED_.FadeOff(fadeMs);
     }
 
     if (activity) {
       saver_.noteActivity(now);
     }
     // Render
-    screen_.update([&](U8G2& g) {
-      if (saver_.step(now, g)) {
-        return;
-      }
-      g.setFont(u8g2_font_6x12_tf);
-      g.drawStr(1, 12, "Calcis Humilis");
-      // Show current tab/page (1-based) and totals
-      char buf[64];
-      const uint8_t tabIdx = selection_.currentTabIndex();
-      const uint8_t tabTotal = Selection::count();
-      const uint8_t pageIdx = selection_.currentPageIndex();
-      const uint8_t pageTotal = selection_.currentTabPageCount();
-      snprintf(buf, sizeof(buf), "Tab %u/%u  Page %u/%u",
-               (unsigned)(tabIdx + 1), (unsigned)tabTotal,
-               (unsigned)(pageIdx + 1), (unsigned)pageTotal);
-      g.drawStr(1, 24, buf);
-      g.drawFrame(0, 0, screen_.width(), screen_.height());
-    });
-    updateTabLEDs_();
-    // Tick LEDs at view rate (including clipping detection)
+    {
+      ZLKM_PERF_SCOPE("screen update");
+      screen_.update([&](U8G2& g) {
+        if (saver_.step(now, g)) {
+          return;
+        }
+        g.setFont(u8g2_font_6x12_tf);
+        g.drawStr(1, 12, "Calcis Humilis");
+        // Show current tab/page (1-based) and totals
+        char buf[64];
+        const uint8_t tabIdx = selection_.currentTabIndex();
+        const uint8_t tabTotal = Selection::count();
+        const uint8_t pageIdx = selection_.currentPageIndex();
+        const uint8_t pageTotal = selection_.currentTabPageCount();
+        snprintf(buf, sizeof(buf), "Tab %u/%u  Page %u/%u",
+                 (unsigned)(tabIdx + 1), (unsigned)tabTotal,
+                 (unsigned)(pageIdx + 1), (unsigned)pageTotal);
+        g.drawStr(1, 24, buf);
+        g.drawFrame(0, 0, screen_.width(), screen_.height());
+      });
+    }
     tickLED_();
-    // Update LEDs animations
-    triggerLED_.Update();
-    clippingLED_.Update();
   }
-
-  // Called when a trigger rising edge occurs
-  void onTrigger(uint32_t fadeMs) { triggerLED_.FadeOff(fadeMs); }
-
-  // Called when clipping/saturation is detected
-  void onClipping(uint32_t fadeMs = 80) { clippingLED_.FadeOff(fadeMs); }
 
  private:
   void updateTabLEDs_() {
@@ -112,8 +106,13 @@ class View {
   }
 
   void tickLED_() {
+    // Update LEDs animations
+    ZLKM_PERF_SCOPE("View::tickLED_");
+    updateTabLEDs_();
+    triggerLED_.Update();
+    clippingLED_.Update();
     if (fb_ && saturationCounter_ < fb_->saturationCounter) {
-      onClipping(80);
+      clippingLED_.FadeOff(80);
       saturationCounter_ = fb_->saturationCounter;
     }
   }
