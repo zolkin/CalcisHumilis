@@ -57,14 +57,16 @@ class View {
 
   // Call on UI core at free cadence; internally gated to ~fps
   void update(bool activity) {
+    ZLKM_PERF_SCOPE("View::update");
+    const uint32_t now = millis();
+    if (now - lastUpdateMs_ < updateInterval_) return;
+    lastUpdateMs_ = now;
+
     using namespace zlkm::dsp;
     if (cfg_.pCfg->trigCounter != lastTrigCounter_) {
       lastTrigCounter_ = cfg_.pCfg->trigCounter;
       onTrigger(rateToMs(cfg_.pCfg->envs[Calcis::EnvAmp].decay, CalcisTR::SR));
     }
-    const uint32_t now = millis();
-    if (now - lastUpdateMs_ < updateInterval_) return;
-    lastUpdateMs_ = now;
 
     if (activity) {
       saver_.noteActivity(now);

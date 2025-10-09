@@ -54,6 +54,7 @@ class QuadManagerIO {
 
   // Poll once; apply deltas
   inline void update() {
+    ZLKM_PERF_SCOPE("QuadManagerIO::update");
     auto bits =
         dev_.template readPins<2 * N>(readOrder_);  // A-block then B-block
     for (int i = 0; i < N; ++i) {

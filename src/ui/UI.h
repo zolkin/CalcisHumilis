@@ -110,10 +110,9 @@ class UI {
     ZLKM_PERF_SCOPE("UI update");
     // Trigger button handled in controller
     sampler_.update();
-    processInputs();
+    controller_.update();
     view_.update(controller_.hasActivity());
   }
-  void processInputs() { controller_.update(); }
 
  private:
   // Selection (tabs/pages) used by both controller and view
