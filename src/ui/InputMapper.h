@@ -67,6 +67,15 @@ static inline float stickEnds(float f) {
   return f * reducedRangeScale;
 }
 
+// Inverse of stickEnds() for the central region; clamps at edges
+static inline float invStickEnds(float y) {
+  static constexpr float stickyEnds = 0.05f;
+  static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
+  if (y <= 0.f) return 0.f;
+  if (y >= 1.f) return 1.f;
+  return y / reducedRangeScale;
+}
+
 template <class T, class Lim>
 class LinearMapper : public InputMapperMixin<T, LinearMapper<T, Lim>> {
   using IM = InputMapper;
@@ -80,7 +89,9 @@ class LinearMapper : public InputMapperMixin<T, LinearMapper<T, Lim>> {
 
   static int16_t reverseMap(const T& in) {
     float x = (in - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
-    x = stickEnds(x);
+    x = invStickEnds(x);
+    if (x < 0.f) x = 0.f;
+    if (x > 1.f) x = 1.f;
     return static_cast<int16_t>(x * float(IM::kMaxRawValue));
   }
 };
@@ -99,9 +110,12 @@ class ExpPowMapper
     out = Lim::outMin() + x * (Lim::outMax() - Lim::outMin());
   }
   static int16_t reverseMap(const T& in) {
-    float x = (in - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
-    x = stickEnds(x);
-    x = powf(x, 1.0f / ExpPolicy::EXP);
+    // Forward: raw->x -> pow -> stickEnds -> scale
+    float y = (in - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
+    float z = invStickEnds(y);
+    float x = powf(z, 1.0f / ExpPolicy::EXP);
+    if (x < 0.f) x = 0.f;
+    if (x > 1.f) x = 1.f;
     return int16_t(x * float(IM::kMaxRawValue));
   }
 };
@@ -119,8 +133,12 @@ class DbMapper : public InputMapperMixin<float, DbMapper<Lim>> {
   }
 
   static int16_t reverseMap(const float& in) {
-    float dB = 20.f * log10f(in);
+    // Guard against non-positive input
+    float amp = in <= 0.f ? powf(10.f, Lim::outMin() * 0.05f) : in;
+    float dB = 20.f * log10f(amp);
     float x = (dB - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
+    if (x < 0.f) x = 0.f;
+    if (x > 1.f) x = 1.f;
     return static_cast<int16_t>(x * float(IM::kMaxRawValue));
   }
 };
@@ -133,13 +151,15 @@ class RateMapper : public InputMapperMixin<float, RateMapper<MsLim, SR>> {
  public:
   static void mapAndSet(int16_t raw, float& out) {
     float x = float(raw) / float(IM::kMaxRawValue);
-    float ms = MsLim::msMin() + x * (MsLim::msMax() - MsLim::msMin());
+    float ms = MsLim::outMin() + x * (MsLim::outMax() - MsLim::outMin());
     out = zlkm::dsp::msToRate(ms, float(SR));
   }
 
   static int16_t reverseMap(const float& in) {
     float ms = zlkm::dsp::rateToMs(in, static_cast<float>(SR));
-    float x = (ms - MsLim::msMin()) / (MsLim::msMax() - MsLim::msMin());
+    float x = (ms - MsLim::outMin()) / (MsLim::outMax() - MsLim::outMin());
+    if (x < 0.f) x = 0.f;
+    if (x > 1.f) x = 1.f;
     return int16_t(x * float(IM::kMaxRawValue));
   }
 };
@@ -165,7 +185,9 @@ class IntMapper : public InputMapperMixin<int, IntMapper<Lim>> {
   static int16_t reverseMap(const int& in) {
     float x = (static_cast<float>(in) - Lim::outMin()) /
               (Lim::outMax() - Lim::outMin());
-    x = stickEnds(x);
+    x = invStickEnds(x);
+    if (x < 0.f) x = 0.f;
+    if (x > 1.f) x = 1.f;
     return int16_t(x * float(IM::kMaxRawValue));
   }
 };
@@ -243,69 +265,63 @@ struct FilterMapper {
 
 }  // namespace zlkm::ui
 
+// Helper macros to define limit and exponent structs for mappers
+#define _ZLKM_MIN_MAX_NAME(NAME) _Limits##NAME
+#define _ZLKM_EXP_NAME(NAME) _ExpPol##NAME
+
+#define _ZLKM_DEFINE_MIN_MAX(LMIN, LMAX, NAME)         \
+  struct _ZLKM_MIN_MAX_NAME(NAME) {                    \
+    static constexpr float outMin() { return (LMIN); } \
+    static constexpr float outMax() { return (LMAX); } \
+  }
+
+#define _ZLKM_DEFINE_EXP(EXP, NAME)     \
+  struct _ZLKM_EXP_NAME(NAME) {         \
+    static constexpr float EXP = (EXP); \
+  };
+
 // Linear float mapper factory (usage: ZLKM_UI_LIN_FMAPPER(min,max)(&cfg))
-#define ZLKM_UI_LIN_FMAPPER(MIN, MAX, VAL)                                \
-  [&]() {                                                                 \
-    struct _Limits##__LINE__ {                                            \
-      static constexpr float outMin() { return (MIN); }                   \
-      static constexpr float outMax() { return (MAX); }                   \
-    };                                                                    \
-    return ::zlkm::ui::LinearMapper<float, _Limits##__LINE__>::make(VAL); \
+#define ZLKM_UI_LIN_FMAPPER(MIN, MAX, VAL)                                  \
+  [&]() {                                                                   \
+    _ZLKM_DEFINE_MIN_MAX(MIN, MAX, FLIN);                                   \
+    return ::zlkm::ui::LinearMapper<float, _ZLKM_MIN_MAX_NAME(FLIN)>::make( \
+        VAL);                                                               \
   }()
 
-#define ZLKM_UI_EXP_FMAPPER(MIN, MAX, VAL)                         \
-  [&]() {                                                          \
-    struct _LimitsE##__LINE__ {                                    \
-      static constexpr float outMin() { return (MIN); }            \
-      static constexpr float outMax() { return (MAX); }            \
-    };                                                             \
-    struct _ExpPol##__LINE__ {                                     \
-      static constexpr float EXP = 1.6f;                           \
-    };                                                             \
-    return ::zlkm::ui::ExpPowMapper<float, _LimitsE##__LINE__,     \
-                                    _ExpPol##__LINE__>::make(VAL); \
-  }()
-
-#define ZLKM_UI_EXP_FMAPPER_EX(MIN, MAX, EXPONENT, VAL)             \
-  [&]() {                                                           \
-    struct _LimitsE2##__LINE__ {                                    \
-      static constexpr float outMin() { return (MIN); }             \
-      static constexpr float outMax() { return (MAX); }             \
-    };                                                              \
-    struct _ExpPol2##__LINE__ {                                     \
-      static constexpr float EXP = (EXPONENT);                      \
-    };                                                              \
-    return ::zlkm::ui::ExpPowMapper<float, _LimitsE2##__LINE__,     \
-                                    _ExpPol2##__LINE__>::make(VAL); \
-  }()
-
-#define ZLKM_UI_DB_FMAPPER(DB_MIN, DB_MAX, VAL)             \
-  [&]() {                                                   \
-    struct _DbL##__LINE__ {                                 \
-      static constexpr float outMin() { return (DB_MIN); }  \
-      static constexpr float outMax() { return (DB_MAX); }  \
-    };                                                      \
-    return ::zlkm::ui::DbMapper<_DbL##__LINE__>::make(VAL); \
-  }()
-
-#define ZLKM_UI_RATE_FMAPPER(MS_MIN, MS_MAX, SR, VAL)                 \
+// Exponential float mapper factory (usage: ZLKM_UI_EXP_FMAPPER(min,max)(&cfg))
+#define ZLKM_UI_EXP_FMAPPER_EX(MIN, MAX, EXP, VAL)                    \
   [&]() {                                                             \
-    struct _RateL##__LINE__ {                                         \
-      static constexpr float msMin() { return (MS_MIN); }             \
-      static constexpr float msMax() { return (MS_MAX); }             \
-    };                                                                \
-    return ::zlkm::ui::RateMapper<_RateL##__LINE__, (SR)>::make(VAL); \
+    _ZLKM_DEFINE_MIN_MAX(MIN, MAX, FEXP);                             \
+    _ZLKM_DEFINE_EXP(EXP, FEXP);                                      \
+    return ::zlkm::ui::ExpPowMapper<float, _ZLKM_MIN_MAX_NAME(FEXP),  \
+                                    _ZLKM_EXP_NAME(FEXP)>::make(VAL); \
   }()
 
-#define ZLKM_UI_INT_MAPPER(MIN, MAX, VAL)                     \
-  [&]() {                                                     \
-    struct _IntL##__LINE__ {                                  \
-      static constexpr float outMin() { return (MIN); }       \
-      static constexpr float outMax() { return (MAX); }       \
-    };                                                        \
-    return ::zlkm::ui::IntMapper<_IntL##__LINE__>::make(VAL); \
+#define ZLKM_UI_EXP_FMAPPER(MIN, MAX, VAL) \
+  ZLKM_UI_EXP_FMAPPER_EX(MIN, MAX, 1.6f, VAL)
+
+// dB-range mapper factory (usage: ZLKM_UI_DB_FMAPPER(dbMin,dbMax)(&cfg))
+#define ZLKM_UI_DB_FMAPPER(DB_MIN, DB_MAX, VAL)                       \
+  [&]() {                                                             \
+    _ZLKM_DEFINE_MIN_MAX(DB_MIN, DB_MAX, DB_L);                       \
+    return ::zlkm::ui::DbMapper<_ZLKM_MIN_MAX_NAME(DB_L)>::make(VAL); \
   }()
 
+// Rate mapper factory
+#define ZLKM_UI_RATE_FMAPPER(MS_MIN, MS_MAX, SR, VAL)                          \
+  [&]() {                                                                      \
+    _ZLKM_DEFINE_MIN_MAX(MS_MIN, MS_MAX, RateL);                               \
+    return ::zlkm::ui::RateMapper<_ZLKM_MIN_MAX_NAME(RateL), (SR)>::make(VAL); \
+  }()
+
+// Integer mapper factory
+#define ZLKM_UI_INT_MAPPER(MIN, MAX, VAL)                              \
+  [&]() {                                                              \
+    _ZLKM_DEFINE_MIN_MAX(MIN, MAX, IntL);                              \
+    return ::zlkm::ui::IntMapper<_ZLKM_MIN_MAX_NAME(IntL)>::make(VAL); \
+  }()
+
+// Boolean threshold mapper factory
 #define ZLKM_UI_BOOL_MAPPER_TH(THRESHOLD, VAL)                    \
   [&]() {                                                         \
     struct _BoolThr##__LINE__ {                                   \
@@ -315,40 +331,3 @@ struct FilterMapper {
   }()
 
 #define ZLKM_UI_BOOL_MAPPER(VAL) ZLKM_UI_BOOL_MAPPER_TH(0.5f, VAL)
-
-// Filter mapper macros: pass pointer to DJFilterTPT<SR>::Cfg
-#define ZLKM_UI_FILTER_CUT_MAPPER(SR, MIN01, MAX01, CFG_PTR)                \
-  [&]() {                                                                   \
-    struct _FL##__LINE__ {                                                  \
-      static constexpr float outMin() { return (MIN01); }                   \
-      static constexpr float outMax() { return (MAX01); }                   \
-    };                                                                      \
-    return ::zlkm::ui::FilterCutMapper<(SR), _FL##__LINE__>::make(CFG_PTR); \
-  }()
-
-#define ZLKM_UI_FILTER_RES_MAPPER(SR, MIN01, MAX01, CFG_PTR)                \
-  [&]() {                                                                   \
-    struct _FR##__LINE__ {                                                  \
-      static constexpr float outMin() { return (MIN01); }                   \
-      static constexpr float outMax() { return (MAX01); }                   \
-    };                                                                      \
-    return ::zlkm::ui::FilterResMapper<(SR), _FR##__LINE__>::make(CFG_PTR); \
-  }()
-
-#define ZLKM_UI_FILTER_MORPH_MAPPER(SR, MIN01, MAX01, CFG_PTR)                \
-  [&]() {                                                                     \
-    struct _FM##__LINE__ {                                                    \
-      static constexpr float outMin() { return (MIN01); }                     \
-      static constexpr float outMax() { return (MAX01); }                     \
-    };                                                                        \
-    return ::zlkm::ui::FilterMorphMapper<(SR), _FM##__LINE__>::make(CFG_PTR); \
-  }()
-
-#define ZLKM_UI_FILTER_DRIVE_MAPPER(SR, MIN01, MAX01, CFG_PTR)                \
-  [&]() {                                                                     \
-    struct _FD##__LINE__ {                                                    \
-      static constexpr float outMin() { return (MIN01); }                     \
-      static constexpr float outMax() { return (MAX01); }                     \
-    };                                                                        \
-    return ::zlkm::ui::FilterDriveMapper<(SR), _FD##__LINE__>::make(CFG_PTR); \
-  }()

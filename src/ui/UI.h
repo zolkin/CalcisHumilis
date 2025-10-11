@@ -4,7 +4,6 @@
 // Controller, View). It preserves the original UI class name and public API
 // to minimize changes elsewhere in the codebase.
 
-#include <Arduino.h>
 #include <JLED.h>
 
 #include <array>
@@ -18,11 +17,14 @@
 #include "hw/io/GpioPins.h"
 #include "hw/io/McpPins.h"
 #include "hw/io/QuadManagerIO.h"
+#include "platform/pins.h"
+#include "platform/platform.h"
 #include "ui/Controller.h"
 #include "ui/InputMapper.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"
 #include "ui/View.h"
+#include "util/IdleTimer.h"
 #include "util/Profiler.h"
 
 namespace zlkm::ch {
@@ -32,6 +34,7 @@ class UI {
   using CH = Calcis;
   static constexpr float cyc(float p) { return Calcis::cycles(p); }
   using CalcisTR = zlkm::ch::CalcisTR;
+  using Pins = ::zlkm::platform::Pins;
 
   static constexpr size_t kMaxPagesPerTab = 4;  // define sizes explicitly here
   static constexpr size_t kRotaryCount = 4;
@@ -41,12 +44,15 @@ class UI {
 
   using PinExpander = hw::io::Mcp23017Pins;
   using Sampler = hw::io::QuadManagerIO<PinExpander, kRotaryCount>;
+  using SamplerCfg = typename Sampler::Cfg;
   using ControllerT = ::zlkm::ui::Controller<Sampler, Selection::count(),
                                              kMaxPagesPerTab, kRotaryCount>;
   using ViewT = ::zlkm::ui::View<Selection>;
 
   using TabButtons = hw::io::ButtonManager<4, PinExpander>;
   using Encoders = hw::io::QuadManagerIO<PinExpander, kRotaryCount>;
+  using TrigBtnCfg =
+      zlkm::hw::io::ButtonManager<1, zlkm::hw::io::GpioPins<1>>::Cfg;
 
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
@@ -54,7 +60,7 @@ class UI {
     CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
 
     Cfg(const Cfg&) = delete;
-    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = {4, 5, 6, 7}} {}
+    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = Pins::TAB_BUTTONS} {}
 
     static constexpr int kNumTabs = 4;
 
@@ -63,8 +69,6 @@ class UI {
     std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
     std::array<uint8_t, kRotaryCount> encPinsA{0, 2, 4, 13};
 
-    // ParameterTab rotaryTabs[kNumTabs];
-
     Calcis::Cfg* pCfg;
 
     float snapMultiplier = 0.0f;
@@ -72,7 +76,7 @@ class UI {
     float encClkDiv = 50.0f;
     uint32_t screenIdleMs = 10000;
     uint16_t pollMs = 5;
-    uint8_t trigPin = 26;
+    uint8_t trigPin = Pins::TRIG_IN;
   };
 
   using ViewCfg = typename ViewT::Cfg;
@@ -80,26 +84,25 @@ class UI {
   explicit UI(Calcis::Cfg* cfg, Calcis::Feedback* fb)
       : ucfg_(cfg),
         fb_(fb),
+        idleTimer_(ucfg_.screenIdleMs),
         pinExp_(hw::io::I2cCfg{.address = 0x20,
                                .wire = &Wire,
                                .clockHz = 400000,
-                               .i2cSDA = 20,
-                               .i2cSCL = 21},
+                               .i2cSDA = Pins::I2C_SDA,
+                               .i2cSCL = Pins::I2C_SCL},
                 hw::io::PinMode::Output),
-        sampler_(pinExp_, typename Sampler::Cfg{.pinsA = {8, 10, 12, 14},
-                                                .pinsB = {9, 11, 13, 15},
-                                                .usePullUp = true}),
+        sampler_(pinExp_, SamplerCfg{.pinsA = Pins::ENCODER_A,
+                                     .pinsB = Pins::ENCODER_B,
+                                     .usePullUp = true}),
         selection_(),
-        controller_(
-            *ucfg_.pCfg, pinExp_, ucfg_.tabBtns, *fb_, sampler_, selection_,
-            ucfg_.trigPin,
-            zlkm::hw::io::ButtonManager<1, zlkm::hw::io::GpioPins<1>>::Cfg{
-                .pins = {0},
-                .activeLow = true,
-                .usePullUp = true,
-                .debounceTicks = 5}),
+        controller_(*ucfg_.pCfg, pinExp_, ucfg_.tabBtns, *fb_, sampler_,
+                    selection_, ucfg_.trigPin,
+                    TrigBtnCfg{.pins = {0},
+                               .activeLow = true,
+                               .usePullUp = true,
+                               .debounceTicks = 5}),
         view_(selection_, pinExp_,
-              ViewCfg{.ledPins_ = {0, 1, 2, 3}, .fps = 60, .pCfg = ucfg_.pCfg},
+              ViewCfg{.ledPins_ = Pins::LEDS, .fps = 60, .pCfg = ucfg_.pCfg},
               fb_),
         filterParams_(&ucfg_.pCfg->filter) {
     initSpecs();
@@ -112,8 +115,8 @@ class UI {
     ZLKM_PERF_SCOPE("UI update");
     // Trigger button handled in controller
     sampler_.update();
-    controller_.update();
-    view_.update(controller_.hasActivity());
+    controller_.update(idleTimer_);
+    view_.update(idleTimer_);
   }
 
  private:
@@ -172,6 +175,7 @@ class UI {
 
   Cfg ucfg_;
   Calcis::Feedback* fb_{};
+  zlkm::util::IdleTimer idleTimer_{10000};
 
   // Hardware pieces reused
   hw::io::Mcp23017Pins pinExp_;

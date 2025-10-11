@@ -1,9 +1,10 @@
 #pragma once
-#include <Arduino.h>
 #include <math.h>  // only for sinf/cosf in respawn
 #include <stdint.h>
 
 #include <array>
+
+#include "platform/platform.h"
 
 namespace zlkm::hw::ssaver {
 

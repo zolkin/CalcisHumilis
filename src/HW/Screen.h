@@ -1,9 +1,13 @@
 #pragma once
-#include <Arduino.h>
 #include <U8g2lib.h>
 #include <stdint.h>
 
+#include "platform/pins.h"
+#include "platform/platform.h"
+
 namespace zlkm::hw {
+
+using Pins = ::zlkm::platform::Pins;
 
 // Pick your controller at compile time:
 enum class ScreenController : uint8_t { SSD1306_128x64, SH1107_64x128 };
@@ -26,21 +30,21 @@ template <ScreenController C>
 class Screen {
  public:
   struct Cfg {
-    // Pins (your wiring: GP6/7/9/8; CS is hard-wired to GND)
-    uint8_t pinSCK = 6;   // GP6  -> SCL (SPI0 SCK)
-    uint8_t pinMOSI = 7;  // GP7  -> SDA (SPI0 MOSI)
-    uint8_t pinDC = 9;    // GP9  -> DC
-    uint8_t pinRST = 8;   // GP8  -> RES
+    uint8_t pinSCK = Pins::OLED_SCK;
+    uint8_t pinMOSI = Pins::OLED_MOSI;
+    uint8_t pinDC = Pins::OLED_DC;
+    uint8_t pinRST = Pins::OLED_RST;
 
     // SPI & display
-    uint32_t spiHz = 8'000'000;         // use u8g2.setBusClock()
-    const u8g2_cb_t* rotation = U8G2_R0;  // For SH1107 use U8G2_R90 for 128x64 landscape
+    uint32_t spiHz = 8'000'000;           // use u8g2.setBusClock()
+    const u8g2_cb_t* rotation = U8G2_R0;  // landscape
     const uint8_t* font = u8g2_font_6x12_tf;
   };
 
   explicit Screen(const Cfg& cfg)
       : cfg_(cfg),
-        u8g2_(cfg.rotation, U8X8_PIN_NONE, cfg.pinDC, cfg.pinRST)  // CS tied to GND
+        u8g2_(cfg.rotation, U8X8_PIN_NONE, cfg.pinDC,
+              cfg.pinRST)  // CS tied to GND
   {
     // SPI0 on your pins (MISO not used)
     SPI.setSCK(cfg_.pinSCK);

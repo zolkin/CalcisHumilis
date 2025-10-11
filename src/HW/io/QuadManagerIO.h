@@ -1,12 +1,13 @@
 #pragma once
-#include <Arduino.h>
-
 #include <array>
 #include <bitset>
 
-#include "GpioPins.h"  // GpioPins<M>   has readPins<K>()
-#include "McpPins.h"   // Mcp23017Pins has readPins<K>()
 #include "Types.h"
+
+// Fallback for perf macro if Profiler.h is not included
+#ifndef ZLKM_PERF_SCOPE
+#define ZLKM_PERF_SCOPE(NAME) ((void)0)
+#endif
 
 namespace zlkm::hw::io {
 

@@ -1,14 +1,13 @@
 #pragma once
-#include <math.h>
 
-#include "math/Constants.h"
+#include <array>
 
 namespace zlkm::mod {
 
 // Intended Usage:
 // Group all the interpolatable parameters in one place and modulate them all at
 // once
-template <int BLOCK_SIZE, int N>
+template <int BLOCK_SIZE, size_t N>
 class BlockInterpolatorN {
   static constexpr float PER_SAMPLE = 1.f / float(BLOCK_SIZE);
 
@@ -33,7 +32,7 @@ class BlockInterpolatorN {
 
 template <int BLOCK_SIZE, size_t N>
 inline BlockInterpolatorN<BLOCK_SIZE, N> makeBlockInterpolator(
-    float* src, std::array<float, N> const& targets) {
+    float* src, const std::array<float, N>& targets) {
   return BlockInterpolatorN<BLOCK_SIZE, N>(src, targets);
 }
 

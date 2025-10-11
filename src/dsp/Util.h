@@ -41,12 +41,6 @@ constexpr float rateToMs(const float rt, const float sr) {
   return 1.f / rt / sr * 1000.f;
 }
 
-// Convenience: wrap a normalized phase "u" by an offset and keep it 0..1
-inline float wrap01(float u) {
-  u -= floorf(u);
-  return u;
-}
-
 // Prewarp: Hz -> gCut  (g = tan(pi * f / SR))
 template <int SR>
 constexpr float hzToGCut(float hz) {
@@ -54,7 +48,7 @@ constexpr float hzToGCut(float hz) {
   const float nyq = 0.5f * SR;
   const float maxHz = 0.45f * nyq * 2.0f;  // ~0.45*fs
   if (safeHz > maxHz) safeHz = maxHz;
-  return tanf(float(M_PI) * safeHz / float(SR));
+  return tanf(float(zlkm::math::PI_F) * safeHz / float(SR));
 }
 
 // Map UI resonance [0..1] -> Q in [Qmin..Qmax] -> kDamp = 2/Q

@@ -1,11 +1,12 @@
 #pragma once
-#include <Arduino.h>
 #include <stdint.h>
 
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
+
+#include "platform/platform.h"
 
 namespace zlkm::hw::ssaver {
 
@@ -24,7 +25,6 @@ class SaverMux {
 
  public:
   struct Cfg {
-    uint32_t idleTimeoutMs = 10'000;  // 0 => never idle in step(now,g)
     MuxMode mode = MuxMode::Cycle;
     uint32_t cycleMs = 10'000;  // used by Cycle/Random
     uint8_t startIndex = 0;     // initial saver (and fixed for Single)
@@ -34,7 +34,6 @@ class SaverMux {
   explicit SaverMux(const Cfg& muxCfg = {}, CfgTuple saverCfgs = CfgTuple{})
       : muxCfg_(muxCfg), saverCfgs_(std::move(saverCfgs)) {
     const uint32_t now = millis();
-    lastActivityMs_ = now;
     lastSwitchMs_ = now;
     currentIndex_ = clampIndex(muxCfg_.startIndex);
     emplaceByIndex(currentIndex_);
@@ -45,22 +44,6 @@ class SaverMux {
                                   (sizeof...(Cfgs) == sizeof...(SaverTpls))>>
   explicit SaverMux(const Cfg& muxCfg, Cfgs&&... cfgs)
       : SaverMux(muxCfg, CfgTuple{std::forward<Cfgs>(cfgs)...}) {}
-
-  // Activity API (for internal idle tracking)
-  inline void noteActivity(uint32_t now) {
-    lastActivityMs_ = now;
-    if (idleActive_) {
-      idleActive_ = false;
-      lastSwitchMs_ = now;
-    }
-  }
-
-  // Step with internal idle detection. Returns true if a saver drew.
-  inline bool step(uint32_t now, G& g) {
-    const bool idle = (muxCfg_.idleTimeoutMs > 0) &&
-                      (now - lastActivityMs_ >= muxCfg_.idleTimeoutMs);
-    return stepImpl(now, idle, g);
-  }
 
   // Step with external idle boolean. Returns true if a saver drew.
   inline bool step(uint32_t now, bool isIdle, G& g) {
@@ -145,7 +128,6 @@ class SaverMux {
   CfgTuple saverCfgs_{};
   ActiveVariant active_;
 
-  uint32_t lastActivityMs_{0};
   uint32_t lastSwitchMs_{0};
   uint8_t currentIndex_{0};
   bool idleActive_{false};

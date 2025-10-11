@@ -1,5 +1,4 @@
 #pragma once
-#include <Arduino.h>
 #include <math.h>
 
 #include <array>
@@ -7,6 +6,7 @@
 #include "dsp/Blep.h"
 #include "dsp/Util.h"
 #include "math/Util.h"
+#include "platform/platform.h"
 
 namespace zlkm::audio {
 
@@ -33,8 +33,8 @@ class MorphOscN {
   static constexpr float FREQ_TO_T = 1.0f / SR;
 
   struct alignas(16) State {
-    float morph = 0.0f;           // 0..1
-    float pulseWidth = 0.5f;      // 0..1
+    float morph = 0.0f;          // 0..1
+    float pulseWidth = 0.5f;     // 0..1
     dsp::Injector2TapX2 blep{};  // now dt in [0,1) and the result in +-1
     float cyclesPerSample = 0.0f;
     float phase = 0.0f;  // t in [0,1)
@@ -183,4 +183,4 @@ class MorphOscN {
   }
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::audio

@@ -4,13 +4,13 @@
 
 // need to include later
 
-#include <Arduino.h>
 #include <Stream.h>
 
 #include "audio/DJFilter.h"
 #include "audio/MorphOsc.h"
 #include "audio/engine/Swarm.h"
 #include "mod/ADEnvelopes.h"
+#include "platform/platform.h"
 
 namespace zlkm::ch {
 

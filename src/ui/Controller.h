@@ -10,51 +10,13 @@
 #include "hw/io/McpPins.h"
 #include "math/Util.h"
 #include "ui/TabControl.h"
-#include "ui/UiTypes.h" 
+#include "ui/UiTypes.h"
+#include "util/IdleTimer.h"
 #include "util/Profiler.h"
 
 namespace zlkm::ui {
 
 // Sampler is any type that provides consumeDeltaCounts(int)
-
-// No ProcPage: use zlkm::ch::ParameterPage directly for specs and state
-
-// Utility mapping helpers (copied from existing UI_impl.hh)
-// static inline float stickEnds(float f) {
-//   static constexpr float stickyEnds = 0.05f;
-//   static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
-//   if (f < stickyEnds) return 0.f;
-//   if (f > 1.f - stickyEnds) return 1.f;
-//   return f * reducedRangeScale;
-// }
-
-static inline float mapLin_(int raw, int rawMax, float outMin, float outMax) {
-  raw = zlkm::math::clamp(raw, 0, rawMax);
-  float x = static_cast<float>(raw) / static_cast<float>(rawMax);
-  x = stickEnds(x);
-  return outMin + x * (outMax - outMin);
-}
-
-static inline float mapExp_(int raw, int rawMax, float outMin, float outMax) {
-  if (rawMax <= 0) return outMin;
-  float x = float(zlkm::math::clamp(raw, 0, rawMax)) / rawMax;
-  if (outMin < 0 && outMax <= 0) {
-    float dB = outMin + x * (outMax - outMin);
-    return powf(10.f, dB * 0.05f);
-  }
-  float y = powf(x, 1.6f);
-  y = stickEnds(y);
-  return outMin + (outMax - outMin) * y;
-}
-
-static inline float potToRate(int raw, int rawMax, float msMin, float msMax,
-                              float SR) {
-  raw = zlkm::math::clamp(raw, 0, rawMax);
-  const float pot = float(raw) / float(rawMax);
-  float ms = msMin + pot * (msMax - msMin);
-  return zlkm::dsp::msToRate(ms, SR);
-}
-
 // Controller consumes encoder deltas and updates Calcis::Cfg
 template <typename SamplerT, size_t N, size_t PAGE_COUNT, size_t ROTARY_COUNT>
 class Controller {
@@ -98,7 +60,7 @@ class Controller {
     return rep.rising.test(0);
   }
 
-  void update() {
+  void update(zlkm::util::IdleTimer& idle) {
     ZLKM_PERF_SCOPE("Controller::update");
     activity_ = false;
     auto rep = tabBtns_.tick();
@@ -108,13 +70,16 @@ class Controller {
       if ((uint8_t)i == cur) {
         selection_.nextPageInCurrentTab();
         activity_ = true;
+        idle.noteActivity();
       } else {
         if (i < (int)Selection::count()) selection_.setCurrentTab((uint8_t)i);
         activity_ = true;
+        idle.noteActivity();
       }
     }
 
     if (consumeTriggerRising()) {
+      idle.noteActivity();
       ++(cfg_.trigCounter);
     }
 
@@ -125,6 +90,7 @@ class Controller {
       int32_t dCounts = sampler_.consumeDeltaCounts(i);
       if (!dCounts) continue;
       activity_ = true;
+      idle.noteActivity();
       int16_t& raw = page.rawPos[i];
       // Use default span as before
       constexpr int defaultSpan = 2 * 24 * 4;

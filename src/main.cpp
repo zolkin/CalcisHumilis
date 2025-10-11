@@ -1,8 +1,7 @@
 #include "app/Main.h"
 
-#include <Arduino.h>
-
 #include "audio/AudioCore.h"
+#include "platform/platform.h"
 #include "util/Profiler.h"
 
 // this needs to come last
@@ -17,14 +16,12 @@ using namespace zlkm::ui;
 using MyAudioCore = audio::AudioCore<CalcisTR, CalcisHumilis>;
 using App = app::MainApp<MyAudioCore, UI>;
 
-#include <pico/platform.h>  // get_core_num()
-
 // ---------- Arduino entry points ----------
 
 void setup() {
   ZLKM_PROFILE_INIT_DEFAULT();
   ZLKM_PROFILE_SET_THREAD_INDEX(
-      []() -> uint8_t { return (uint8_t)get_core_num(); });
+      []() -> uint8_t { return zlkm::platform::get_core_num(); });
   ZLKM_PROFILE_SET_EMIT_THREAD(0);  // UI/core0 prints for all threads
 
   App::ui_start(

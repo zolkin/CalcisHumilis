@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Arduino.h>
 #include <JLED.h>
 #include <U8g2lib.h>
 
@@ -11,9 +10,12 @@
 #include "hw/screensavers/SaverMux.h"
 #include "hw/screensavers/StarField.h"
 #include "hw/screensavers/ThroughTheStars.h"
+#include "platform/pins.h"
+#include "platform/platform.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"  // aliases: ScreenSSD
 #include "ui/assets/ring16x16_48.h"
+#include "util/IdleTimer.h"
 
 namespace zlkm::ui {
 
@@ -29,6 +31,7 @@ class View {
   using CalcisTR = zlkm::ch::CalcisTR;
   using CalcisCfg = zlkm::ch::Calcis::Cfg;
   using Feedback = typename Calcis::Feedback;
+  using Pins = ::zlkm::platform::Pins;
 
   struct Cfg {
     std::array<uint8_t, Selection::TAB_COUNT> ledPins_{};
@@ -43,8 +46,8 @@ class View {
         cfg_(cfg),
         saver_(SaverCfg()),
         pinExp_(exp),
-        triggerLED_(27),
-        clippingLED_(28),
+        triggerLED_(Pins::LED_TRIGGER),
+        clippingLED_(Pins::LED_CLIPPING),
         fb_(fb) {
     for (int i = 0; i < 4; ++i) {
       pinExp_.setPinMode(cfg_.ledPins_[i], zlkm::hw::io::PinMode::Output);
@@ -57,7 +60,7 @@ class View {
   }
 
   // Call on UI core at free cadence; internally gated to ~fps
-  void update(bool activity) {
+  void update(const zlkm::util::IdleTimer& idle) {
     ZLKM_PERF_SCOPE("View::update");
     const uint32_t now = millis();
     if (now - lastUpdateMs_ < updateInterval_) return;
@@ -71,15 +74,12 @@ class View {
       triggerLED_.FadeOff(fadeMs);
     }
 
-    if (activity) {
-      saver_.noteActivity(now);
-    }
     // Render
     {
       ZLKM_PERF_SCOPE("screen update");
       screen_.update([&](U8G2& g) {
         using namespace zlkm::ui::assets;
-        if (saver_.step(now, g)) {
+        if (saver_.step(now, idle.isIdle(now), g)) {
           return;
         }
         // Fetch current page values

@@ -1,9 +1,11 @@
 #pragma once
-#include <Arduino.h>
-#include <math.h>
 
-#include "..\dsp\Util.h"
-#include "..\math\Util.h"
+#include <assert.h>
+
+#include "dsp/Util.h"
+#include "math/Constants.h"
+#include "math/Util.h"
+#include "platform/platform.h"
 
 namespace zlkm::audio {
 
@@ -133,7 +135,7 @@ class SafeFilterParams {
     float Q = clampf(Qt, Limits::kQmin, Limits::kQmax);
 
     // Derived audio scalars
-    cfg_->gCut = tanf(float(M_PI) * cutoffHz / kSR);
+    cfg_->gCut = tanf(float(zlkm::math::PI_F) * cutoffHz / kSR);
     cfg_->kDamp = 2.f / Q;
 
     const float Qnorm = (Q - Limits::kQmin) / (Limits::kQmax - Limits::kQmin);
@@ -174,7 +176,7 @@ class SafeFilterParams {
   static inline float fMaxFromK_stable(float k) {
     // f_stab(k) = (SR/π) * atan(τ * k)
     const float t = Limits::kStabTau * k;
-    const float f = (kSR / float(M_PI)) * atanf(t);
+    const float f = (kSR / float(math::PI_F)) * atanf(t);
     // also respect practical floor:
     return fmaxf(f, Limits::kMinHz);
   }
@@ -207,7 +209,7 @@ class SafeFilterParams {
                Limits::kQmin, Limits::kQmax);
 
     // Stability cap: Q_stab = 2τ / gCut
-    const float g = tanf(float(M_PI) * hz / kSR);
+    const float g = tanf(float(math::PI_F) * hz / kSR);
     const float Q_stab = 2.f * Limits::kStabTau / fmaxf(g, 1e-20f);
 
     return fminf(Q_ui, clampf(Q_stab, Limits::kQmin, Limits::kQmax));

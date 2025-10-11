@@ -1,12 +1,7 @@
 #pragma once
-#include <Arduino.h>
-#include <ArduinoLog.h>
-#include <pico/multicore.h>
-#include <pico/stdlib.h>
-#include <pico/sync.h>
-
 #include <atomic>
 
+#include "platform/platform.h"
 #include "util/spin_lock.h"
 
 namespace zlkm::app {

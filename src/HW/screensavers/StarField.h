@@ -1,8 +1,9 @@
 #pragma once
-#include <Arduino.h>
 #include <stdint.h>
 
 #include <array>
+
+#include "platform/platform.h"
 
 namespace zlkm::hw::ssaver {
 

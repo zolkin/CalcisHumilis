@@ -1,12 +1,15 @@
 #pragma once
-#include <Arduino.h>
 #include <stdint.h>
+
+#include "platform/platform.h"
 
 namespace zlkm::util {
 
 class IdleTimer {
  public:
-  explicit IdleTimer(uint32_t timeout_ms) : timeoutMs_(timeout_ms) { last_ = millis(); }
+  explicit IdleTimer(uint32_t timeout_ms) : timeoutMs_(timeout_ms) {
+    last_ = millis();
+  }
   inline void noteActivity() { last_ = millis(); }
   inline bool isIdle(uint32_t now) const { return (now - last_) >= timeoutMs_; }
 
