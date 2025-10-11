@@ -90,9 +90,12 @@ class SafeFilterParams {
   static constexpr float kSR = float(SR);
   static constexpr float kNyq = 0.5f * kSR;
 
+  using FilterCfg = typename DJFilterTPT<SR>::Cfg;
+
   // Init from 0..1 controls (drive01=0 => drive=1.0 by design)
-  SafeFilterParams(float cutoff01 = 1.0f, float res01 = 0.f,
-                   float drive01 = 0.f, float morph01 = 0.f) {
+  SafeFilterParams(FilterCfg* cfg, float cutoff01 = 1.0f, float res01 = 0.f,
+                   float drive01 = 0.f, float morph01 = 0.f)
+      : cfg_(cfg) {
     setAll01(cutoff01, res01, drive01, morph01);
   }
 
@@ -104,10 +107,15 @@ class SafeFilterParams {
 
   // --- batch update (also 0..1) ---
   void setAll01(float cutoff01, float res01, float drive01, float morph01) {
-    cutoff01_ = clamp01(cutoff01);
-    res01_ = clamp01(res01);
-    drive01_ = clamp01(drive01);
-    morph01_ = clamp01(morph01);
+    assert(cutoff01 >= 0.f && cutoff01 <= 1.f);
+    assert(res01 >= 0.f && res01 <= 1.f);
+    assert(drive01 >= 0.f && drive01 <= 1.f);
+    assert(morph01 >= 0.f && morph01 <= 1.f);
+
+    cutoff01_ = cutoff01;
+    res01_ = res01;
+    drive01_ = drive01;
+    morph01_ = morph01;
 
     // Map res01 -> target Q with perceptual curve
     float Qt = QFromRes01(res01_);
@@ -125,33 +133,33 @@ class SafeFilterParams {
     float Q = clampf(Qt, Limits::kQmin, Limits::kQmax);
 
     // Derived audio scalars
-    cfg.gCut = tanf(float(M_PI) * cutoffHz / kSR);
-    cfg.kDamp = 2.f / Q;
+    cfg_->gCut = tanf(float(M_PI) * cutoffHz / kSR);
+    cfg_->kDamp = 2.f / Q;
 
     const float Qnorm = (Q - Limits::kQmin) / (Limits::kQmax - Limits::kQmin);
     float cutoffFade = math::smoothstep(200.f, 600.f, cutoffHz);
     float bassBoost = 1.f + Limits::kBassMax * Qnorm * cutoffFade;
-    cfg.lpWeight = (1.f - morph01_) * bassBoost;
-    cfg.hpWeight = morph01_;
+    cfg_->lpWeight = (1.f - morph01_) * bassBoost;
+    cfg_->hpWeight = morph01_;
     float lpWeight = (1.0f - morph01) * bassBoost;
     float hpWeight = morph01;
 
-    cfg.lpWeight = lpWeight;
-    cfg.hpWeight = hpWeight;
+    cfg_->lpWeight = lpWeight;
+    cfg_->hpWeight = hpWeight;
 
     // Drive: UI 0..1 -> [1..kDriveMax], then auto-trim vs Q (may dip below 1)
     const float driveUI = 1.f + drive01_ * (Limits::kDriveMax - 1.f);
     const float trim = 1.f / (1.f + Limits::kTrimStrength * (Q - 1.f));
-    cfg.drive = driveUI * trim;
+    cfg_->drive = driveUI * trim;
   }
 
-  typename DJFilterTPT<SR>::Cfg cfg;
+  // --- accessors (for UI display) ---
+  float cutoff01() const { return cutoff01_; }
+  float res01() const { return res01_; }
+  float drive01() const { return drive01_; }
+  float morph01() const { return morph01_; }
 
  private:
-  // --- helpers ---
-  static inline float clamp01(float v) {
-    return (v < 0.f) ? 0.f : ((v > 1.f) ? 1.f : v);
-  }
   static inline float clampf(float v, float lo, float hi) {
     return (v < lo) ? lo : ((v > hi) ? hi : v);
   }
@@ -172,7 +180,7 @@ class SafeFilterParams {
   }
 
   static inline float QFromRes01(float r) {
-    const float t = powf(clamp01(r), Limits::kCurve);
+    const float t = powf(math::clamp01(r), Limits::kCurve);
     return Limits::kQmin * powf(Limits::kQmax / Limits::kQmin, t);
   }
   static inline float res01FromQ(float Q) {
@@ -205,8 +213,10 @@ class SafeFilterParams {
     return fminf(Q_ui, clampf(Q_stab, Limits::kQmin, Limits::kQmax));
   }
 
+  FilterCfg* cfg_;
+
   // --- stored normals (0..1) ---
   float cutoff01_ = 0.f, res01_ = 0.f, drive01_ = 0.f, morph01_ = 0.f;
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::audio

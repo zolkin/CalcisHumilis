@@ -4,14 +4,13 @@
 #include <memory>
 
 #include "CalcisHumilis.h"
-#include "audio/DJFilter.h"
 #include "dsp/Util.h"
 #include "hw/io/ButtonManager.h"
 #include "hw/io/GpioPins.h"
 #include "hw/io/McpPins.h"
 #include "math/Util.h"
 #include "ui/TabControl.h"
-#include "ui/UiTypes.h"  // For RotaryInputSpec, ParameterPage sizes, and Calcis types
+#include "ui/UiTypes.h" 
 #include "util/Profiler.h"
 
 namespace zlkm::ui {
@@ -21,13 +20,13 @@ namespace zlkm::ui {
 // No ProcPage: use zlkm::ch::ParameterPage directly for specs and state
 
 // Utility mapping helpers (copied from existing UI_impl.hh)
-static inline float stickEnds(float f) {
-  static constexpr float stickyEnds = 0.05f;
-  static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
-  if (f < stickyEnds) return 0.f;
-  if (f > 1.f - stickyEnds) return 1.f;
-  return f * reducedRangeScale;
-}
+// static inline float stickEnds(float f) {
+//   static constexpr float stickyEnds = 0.05f;
+//   static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
+//   if (f < stickyEnds) return 0.f;
+//   if (f > 1.f - stickyEnds) return 1.f;
+//   return f * reducedRangeScale;
+// }
 
 static inline float mapLin_(int raw, int rawMax, float outMin, float outMax) {
   raw = zlkm::math::clamp(raw, 0, rawMax);
@@ -126,57 +125,13 @@ class Controller {
       int32_t dCounts = sampler_.consumeDeltaCounts(i);
       if (!dCounts) continue;
       activity_ = true;
-      const auto& spec = page.rotary[i];
-
-      const int span = spec.encSpanCounts > 0 ? spec.encSpanCounts : 2 * 24 * 4;
-      const float scale = span > 0 ? (float(kAdcMaxCode) / float(span)) : 0.0f;
-      int deltaRaw =
-          int(lroundf(float(spec.encInvert ? -dCounts : dCounts) * scale));
-      int& raw = page.rawPos[i];
+      int16_t& raw = page.rawPos[i];
+      // Use default span as before
+      constexpr int defaultSpan = 2 * 24 * 4;
+      const float scale = float(kAdcMaxCode) / float(defaultSpan);
+      int deltaRaw = int(lroundf(float(dCounts) * scale));
       raw = zlkm::math::clamp(raw + deltaRaw, 0, kAdcMaxCode);
-
-      if (!spec.cfgValue) continue;
-      switch (spec.response) {
-        case zlkm::ch::RotaryInputSpec::RsLin:
-          spec.setCfgValue(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          break;
-        case zlkm::ch::RotaryInputSpec::RsExp:
-          spec.setCfgValue(mapExp_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          break;
-        case zlkm::ch::RotaryInputSpec::RsRate:
-          spec.setCfgValue(
-              potToRate(raw, kAdcMaxCode, spec.outMin, spec.outMax, TR::SR));
-          break;
-        case zlkm::ch::RotaryInputSpec::RsGCut:
-          filter_.setCutoff01(
-              mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          spec.setCfgValue(filter_.cfg);
-          break;
-        case zlkm::ch::RotaryInputSpec::RsKDamp:
-          filter_.setRes01(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          spec.setCfgValue(filter_.cfg);
-          break;
-        case zlkm::ch::RotaryInputSpec::RsMorph:
-          filter_.setMorph01(
-              mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          spec.setCfgValue(filter_.cfg);
-          break;
-        case zlkm::ch::RotaryInputSpec::RsDrive:
-          filter_.setDrive01(
-              mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          spec.setCfgValue(filter_.cfg);
-          break;
-        case zlkm::ch::RotaryInputSpec::RsInt: {
-          int v = int(mapLin_(raw, kAdcMaxCode, spec.outMin, spec.outMax));
-          spec.setCfgValue(v);
-        } break;
-        case zlkm::ch::RotaryInputSpec::RsBool: {
-          bool v = bool(int(mapLin_(raw, kAdcMaxCode, 0.f, 1.f)));
-          spec.setCfgValue(v);
-        } break;
-        default:
-          break;
-      }
+      page.mappers[i].mapAndSet(raw);
     }
   }
 
@@ -186,9 +141,7 @@ class Controller {
       for (int pi = 0; pi < t.pageCount; ++pi) {
         auto& page = t.pages[pi];
         for (int i = 0; i < (int)PPage::ROTARY_COUNT; ++i) {
-          if (page.rotary[i].cfgValue) {
-            page.rawPos[i] = kAdcMaxCode / 2;
-          }
+          page.rawPos[i] = page.mappers[i].reverseMap();
         }
       }
     }
@@ -210,7 +163,6 @@ class Controller {
   SamplerT& sampler_;
   Selection& selection_;
   // All per-page state lives in Selection's ParameterPage now
-  zlkm::audio::SafeFilterParams<TR::SR> filter_;
 
   // Expander-backed IO
   PinExpander& pinExp_;

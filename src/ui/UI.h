@@ -19,6 +19,7 @@
 #include "hw/io/McpPins.h"
 #include "hw/io/QuadManagerIO.h"
 #include "ui/Controller.h"
+#include "ui/InputMapper.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"
 #include "ui/View.h"
@@ -99,7 +100,8 @@ class UI {
                 .debounceTicks = 5}),
         view_(selection_, pinExp_,
               ViewCfg{.ledPins_ = {0, 1, 2, 3}, .fps = 60, .pCfg = ucfg_.pCfg},
-              fb_) {
+              fb_),
+        filterParams_(&ucfg_.pCfg->filter) {
     initSpecs();
     controller_.seedFromCfg();
     // Move expander-backed buttons/LEDs to Controller; keep expander here
@@ -115,9 +117,11 @@ class UI {
   }
 
  private:
+  static constexpr float cycles(float p) { return Calcis::cycles(p); }
   // Selection (tabs/pages) used by both controller and view
   void initSpecs() {
     using PPage = ::zlkm::ui::ParameterPageT<kRotaryCount>;
+    using namespace zlkm::ui;
     // Tab 0: Source
     auto& t0 = selection_.tabs[0];
     t0.pageCount = 3;
@@ -125,39 +129,31 @@ class UI {
     // Page 0
     {
       auto& p0 = t0.pages[0];
-      p0.rotary[0] = {Calcis::cycles(65.f), Calcis::cycles(260.f),
-                      zlkm::ch::RotaryInputSpec::RsLin,
-                      &ucfg_.pCfg->cyclesPerSample};
-      p0.rotary[1] = {20.f, 2000.f, zlkm::ch::RotaryInputSpec::RsRate,
-                      &ucfg_.pCfg->envs[CH::EnvAmp].decay};
-      p0.rotary[2] = {2.f, 80.f, zlkm::ch::RotaryInputSpec::RsRate,
-                      &ucfg_.pCfg->envs[CH::EnvPitch].decay};
-      p0.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin,
-                      &ucfg_.pCfg->outGain};
+      auto& cfg = *ucfg_.pCfg;
+      p0.mappers[0] = ZLKM_UI_LIN_FMAPPER(cycles(65.f), cycles(260.f),
+                                          &cfg.cyclesPerSample);
+      p0.mappers[1] = ZLKM_UI_RATE_FMAPPER(20.f, 2000.f, CalcisTR::SR,
+                                           &cfg.envs[CH::EnvAmp].decay);
+      p0.mappers[2] = ZLKM_UI_RATE_FMAPPER(2.f, 80.f, CalcisTR::SR,
+                                           &cfg.envs[CH::EnvPitch].decay);
+      p0.mappers[3] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &cfg.outGain);
     }
     // Page 1
     {
       auto& p1 = t0.pages[1];
       auto& sw = ucfg_.pCfg->swarmOsc;
-      p1.rotary[0] = {0.01f, 0.99f, zlkm::ch::RotaryInputSpec::RsLin,
-                      &sw.pulseWidth};
-      p1.rotary[1] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin, &sw.morph};
-      p1.rotary[2] = {1.f, 1.05946f, zlkm::ch::RotaryInputSpec::RsLin,
-                      &sw.detuneMul};
-      p1.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin,
-                      &sw.stereoSpread};
+      p1.mappers[0] = ZLKM_UI_LIN_FMAPPER(0.01f, 0.99f, &sw.pulseWidth);
+      p1.mappers[1] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &sw.morph);
+      p1.mappers[2] = ZLKM_UI_LIN_FMAPPER(1.f, 1.05946f, &sw.detuneMul);
+      p1.mappers[3] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &sw.stereoSpread);
     }
     // Page 2
     {
       auto& p2 = t0.pages[2];
       auto& sw = ucfg_.pCfg->swarmOsc;
-      p2.rotary[0] = {1.f, CH::MAX_SWARM_VOICES,
-                      zlkm::ch::RotaryInputSpec::RsInt, &sw.voices};
-      p2.rotary[1] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsInt,
-                      &sw.morphMode};
-      p2.rotary[2] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsBool,
-                      &sw.randomPhase};
-      p2.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsLin, nullptr};
+      p2.mappers[0] = ZLKM_UI_INT_MAPPER(1.f, CH::MAX_SWARM_VOICES, &sw.voices);
+      p2.mappers[1] = ZLKM_UI_INT_MAPPER(0.f, 1.f, &sw.morphMode);
+      p2.mappers[2] = ZLKM_UI_BOOL_MAPPER(&sw.randomPhase);
     }
 
     // Tab 1: Filter
@@ -166,14 +162,11 @@ class UI {
     t1.currentPage = 0;
     {
       auto& p = t1.pages[0];
-      p.rotary[0] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsKDamp,
-                     &ucfg_.pCfg->filter};
-      p.rotary[1] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsGCut,
-                     &ucfg_.pCfg->filter};
-      p.rotary[2] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsMorph,
-                     &ucfg_.pCfg->filter};
-      p.rotary[3] = {0.f, 1.f, zlkm::ch::RotaryInputSpec::RsDrive,
-                     &ucfg_.pCfg->filter};
+      using MyFilterMapper = ::zlkm::ui::FilterMapper<CalcisTR::SR>;
+      p.mappers[0] = MyFilterMapper::makeResonance(filterParams_);
+      p.mappers[1] = MyFilterMapper::makeCutoff(filterParams_);
+      p.mappers[2] = MyFilterMapper::makeMorph(filterParams_);
+      p.mappers[3] = MyFilterMapper::makeDrive(filterParams_);
     }
   }
 
@@ -182,6 +175,7 @@ class UI {
 
   // Hardware pieces reused
   hw::io::Mcp23017Pins pinExp_;
+  audio::SafeFilterParams<CalcisTR::SR> filterParams_;
 
   // Components
   Selection selection_;

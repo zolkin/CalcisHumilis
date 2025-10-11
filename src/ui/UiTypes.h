@@ -18,30 +18,4 @@ using ScreenSSD = hw::Screen<hw::ScreenController::SSD1306_128x64>;
 using PinExpander = hw::io::Mcp23017Pins;
 using TabButtons = hw::io::ButtonManager<4, PinExpander>;
 
-struct RotaryInputSpec {
-  enum Response {
-    RsLin,
-    RsExp,
-    RsRate,
-    RsGCut,
-    RsKDamp,
-    RsMorph,
-    RsDrive,
-    RsInt,
-    RsBool
-  };
-  float outMin = 0.0f;
-  float outMax = 1.0f;
-  Response response = RsLin;
-  void* cfgValue = nullptr;
-  int encSpanCounts = 0;
-  int encOffset = 0;
-  bool encWrap = false;
-  bool encInvert = false;
-  template <class T>
-  inline void setCfgValue(T value) const {
-    *reinterpret_cast<T*>(cfgValue) = value;
-  }
-};
-
 }  // namespace zlkm::ch

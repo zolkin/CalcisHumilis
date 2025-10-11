@@ -19,7 +19,7 @@ namespace zlkm::app {
 template <class AudioSource, class UI>
 class MainApp {
  public:
-  static void core0_start(const char* name) {
+  static void ui_start(const char* name) {
     appName_ = name;
     Serial.begin(115200);
     waitForSerial(10000);  // keep your original behavior
@@ -33,7 +33,14 @@ class MainApp {
     }
   }
 
-  static void core1_start() {
+  static void ui_loop() {
+    get().snapUIFeedback();
+    get().ui_.update();
+    get().publishAudioCfg();
+    sleep_ms(2);
+  }
+
+  static void audio_start() {
     while (!c0Started_) {
       delay(1);
     }
@@ -41,19 +48,10 @@ class MainApp {
     c1Started_ = true;
   }
 
-  // -------- Core 1: Audio --------
-  static void core1_loop() {
+  static void audio_loop() {
     get().snapAudioCfg();
     get().audio_.update();
     get().publishUIFeedback();
-  }
-
-  // -------- Core 0: UI --------
-  static void core0_loop() {
-    get().snapUIFeedback();
-    get().ui_.update();
-    get().publishAudioCfg();
-    sleep_ms(2);
   }
 
  private:
@@ -112,4 +110,4 @@ class MainApp {
   static inline const char* appName_ = nullptr;
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::app
