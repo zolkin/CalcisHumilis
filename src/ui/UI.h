@@ -60,7 +60,8 @@ class UI {
     CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
 
     Cfg(const Cfg&) = delete;
-  Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = PinDefs::TAB_BUTTONS} {}
+    Cfg(Calcis::Cfg* pCfg_)
+        : pCfg(pCfg_), tabBtns{.pins = PinDefs::TAB_BUTTONS} {}
 
     static constexpr int kNumTabs = 4;
 
@@ -75,7 +76,7 @@ class UI {
     float encClkDiv = 50.0f;
     uint32_t screenIdleMs = 10000;
     uint16_t pollMs = 5;
-  PinId trigPin = PinDefs::TRIG_IN;  // kept for potential future use
+    PinId trigPin = PinDefs::TRIG_IN;  // kept for potential future use
   };
 
   using ViewCfg = typename ViewT::Cfg;
@@ -84,19 +85,35 @@ class UI {
       : ucfg_(cfg),
         fb_(fb),
         idleTimer_(ucfg_.screenIdleMs),
-  pinSrc_(::zlkm::platform::boards::pico2::pinSource()),
-  sampler_(pinSrc_, SamplerCfg{.pinsA = PinDefs::ENCODER_A,
-             .pinsB = PinDefs::ENCODER_B,
-                                     .usePullUp = true}),
+        pinSrc_(::zlkm::platform::boards::pico2::pinSource()),
+        sampler_(
+            pinSrc_,
+            SamplerCfg{
+                .group = PinDefs::GROUP_EXPANDER,
+                .pinsA =
+                    [] {
+                      std::array<::zlkm::hw::io::PinId, kRotaryCount> ids{};
+                      for (size_t i = 0; i < kRotaryCount; ++i)
+                        ids[i] = PinDefs::ENCODER_A[i].pin();
+                      return ids;
+                    }(),
+                .pinsB =
+                    [] {
+                      std::array<::zlkm::hw::io::PinId, kRotaryCount> ids{};
+                      for (size_t i = 0; i < kRotaryCount; ++i)
+                        ids[i] = PinDefs::ENCODER_B[i].pin();
+                      return ids;
+                    }(),
+                .usePullUp = true}),
         selection_(),
         controller_(*ucfg_.pCfg, pinSrc_, ucfg_.tabBtns, *fb_, sampler_,
                     selection_,
-        TrigBtnCfg{.pins = TrigPinsArray{PinDefs::TRIG_IN},
+                    TrigBtnCfg{.pins = TrigPinsArray{PinDefs::TRIG_IN},
                                .activeLow = true,
                                .usePullUp = true,
                                .debounceTicks = 5}),
-    view_(selection_, pinSrc_,
-      ViewCfg{.ledPins_ = PinDefs::LEDS, .fps = 60, .pCfg = ucfg_.pCfg},
+        view_(selection_, pinSrc_,
+              ViewCfg{.ledPins_ = PinDefs::LEDS, .fps = 60, .pCfg = ucfg_.pCfg},
               fb_),
         filterParams_(&ucfg_.pCfg->filter) {
     initSpecs();

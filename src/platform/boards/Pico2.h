@@ -57,7 +57,7 @@ struct PinDefs {
       SrcPin{2, GROUP_EXPANDER},
       SrcPin{3, GROUP_EXPANDER},
   };
-  inline static const PinArray<4> TAB_BUTTONS{
+  inline static const SrcPinArray<4> TAB_BUTTONS{
       SrcPin{4, GROUP_EXPANDER},
       SrcPin{5, GROUP_EXPANDER},
       SrcPin{6, GROUP_EXPANDER},

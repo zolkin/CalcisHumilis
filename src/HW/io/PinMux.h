@@ -117,6 +117,36 @@ class PinMux {
     return devBits;
   }
 
+  // Bulk read for a specific device group with low-level pin ids
+  template <size_t K>
+  inline std::bitset<K> readGroupPins(PinGroupId group,
+                                      const std::array<PinId, K>& pins) const {
+    return dispatch_(group.value,
+                     [&](auto& d) { return d.template readPins<K>(pins); });
+  }
+
+  // Bulk read two pin sets (A and B) for a specific device group in a single
+  // device transaction, by interleaving the read order as [A0, B0, A1, B1, ...]
+  // to minimize timing skew between corresponding A/B signals.
+  template <size_t K>
+  inline std::pair<std::bitset<K>, std::bitset<K>> readGroupPinsInterleaved(
+      PinGroupId group, const std::array<PinId, K>& pinsA,
+      const std::array<PinId, K>& pinsB) const {
+    std::array<PinId, 2 * K> pins{};
+    for (size_t i = 0; i < K; ++i) {
+      pins[2 * i] = pinsA[i];
+      pins[2 * i + 1] = pinsB[i];
+    }
+    auto bits2 = dispatch_(group.value,
+                           [&](auto& d) { return d.template readPins<2 * K>(pins); });
+    std::bitset<K> outA, outB;
+    for (size_t i = 0; i < K; ++i) {
+      outA.set(i, bits2.test(2 * i));
+      outB.set(i, bits2.test(2 * i + 1));
+    }
+    return {outA, outB};
+  }
+
  private:
   std::tuple<Devices&...> devs_;
 

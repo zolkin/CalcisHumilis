@@ -49,8 +49,8 @@ class View {
         cfg_(cfg),
         saver_(SaverCfg()),
         pinDev_(dev),
-  triggerLED_((uint8_t)PinDefs::LED_TRIGGER.pin().value),
-  clippingLED_((uint8_t)PinDefs::LED_CLIPPING.pin().value),
+        triggerLED_((uint8_t)PinDefs::LED_TRIGGER.pin().value),
+        clippingLED_((uint8_t)PinDefs::LED_CLIPPING.pin().value),
         fb_(fb) {
     for (int i = 0; i < 4; ++i)
       pinDev_.setPinMode(cfg_.ledPins_[i], zlkm::hw::io::PinMode::Output);

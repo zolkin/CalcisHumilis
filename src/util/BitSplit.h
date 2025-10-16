@@ -19,7 +19,7 @@ struct BitSplitT {
 
   constexpr BitSplitT() = default;
   constexpr explicit BitSplitT(T v) : value(v) {}
-  constexpr explicit BitSplitT(T l, T h) : value((h << HIGH_BITS) | l) {
+  constexpr explicit BitSplitT(T l, T h) : value((h << LOW_BITS) | l) {
     assert(l <= MAX_LOW && h <= MAX_HIGH);
   }
   constexpr explicit operator T() const { return value; }
