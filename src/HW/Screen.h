@@ -2,12 +2,12 @@
 #include <U8g2lib.h>
 #include <stdint.h>
 
-#include "platform/pins.h"
+#include "platform/boards/Current.h"
 #include "platform/platform.h"
 
 namespace zlkm::hw {
 
-using Pins = ::zlkm::platform::Pins;
+using PinDefs = typename ::zlkm::platform::boards::current::PinDefs;
 
 // Pick your controller at compile time:
 enum class ScreenController : uint8_t { SSD1306_128x64, SH1107_64x128 };
@@ -30,10 +30,10 @@ template <ScreenController C>
 class Screen {
  public:
   struct Cfg {
-    uint8_t pinSCK = Pins::OLED_SCK;
-    uint8_t pinMOSI = Pins::OLED_MOSI;
-    uint8_t pinDC = Pins::OLED_DC;
-    uint8_t pinRST = Pins::OLED_RST;
+  ::zlkm::hw::io::PinId pinSCK = PinDefs::OLED_SCK.pin();
+  ::zlkm::hw::io::PinId pinMOSI = PinDefs::OLED_MOSI.pin();
+  ::zlkm::hw::io::PinId pinDC = PinDefs::OLED_DC.pin();
+  ::zlkm::hw::io::PinId pinRST = PinDefs::OLED_RST.pin();
 
     // SPI & display
     uint32_t spiHz = 8'000'000;           // use u8g2.setBusClock()
@@ -43,12 +43,12 @@ class Screen {
 
   explicit Screen(const Cfg& cfg)
       : cfg_(cfg),
-        u8g2_(cfg.rotation, U8X8_PIN_NONE, cfg.pinDC,
-              cfg.pinRST)  // CS tied to GND
+        u8g2_(cfg.rotation, U8X8_PIN_NONE, (uint8_t)cfg.pinDC.value,
+              (uint8_t)cfg.pinRST.value)  // CS tied to GND
   {
     // SPI0 on your pins (MISO not used)
-    SPI.setSCK(cfg_.pinSCK);
-    SPI.setTX(cfg_.pinMOSI);
+    SPI.setSCK((uint8_t)cfg_.pinSCK.value);
+    SPI.setTX((uint8_t)cfg_.pinMOSI.value);
     SPI.begin();
 
     u8g2_.begin();

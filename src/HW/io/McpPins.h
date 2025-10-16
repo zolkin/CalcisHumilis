@@ -14,6 +14,7 @@ namespace zlkm::hw::io {
 template <typename DeviceT, int N>
 class McpPins {
  public:
+  using PinIdT = PinId;
   static constexpr int MAX_BITS = 16;
   static constexpr int HALF_BITS = MAX_BITS / 2;
   static_assert(N > 0 && N <= MAX_BITS, "McpPins<N>: N must be 1..16");
@@ -73,10 +74,11 @@ class McpPins {
   }
 
   template <size_t K>
-  inline std::bitset<K> readPins(const std::array<uint8_t, K>& pins) const {
+  inline std::bitset<K> readPins(const std::array<PinId, K>& pins) const {
     bool anyA = false, anyB = false;
     for (int i = 0; i < K; ++i) {
-      if (pins[i] < 8)
+      uint8_t p = (uint8_t)pins[i].value;
+      if (p < 8)
         anyA = true;
       else
         anyB = true;
@@ -86,17 +88,18 @@ class McpPins {
 
     if (anyA && !anyB) {
       auto a = readHalf(0);  // HalfBits = bitset<8>
-      for (int i = 0; i < K; ++i) out.set(i, a.test(pins[i]));  // pins < 8
+      for (int i = 0; i < K; ++i) out.set(i, a.test((uint8_t)pins[i].value));
       return out;
     }
     if (!anyA && anyB) {
       auto b = readHalf(1);
-      for (int i = 0; i < K; ++i) out.set(i, b.test(pins[i] - 8));  // pins >= 8
+      for (int i = 0; i < K; ++i)
+        out.set(i, b.test((uint8_t)pins[i].value - 8));  // pins >= 8
       return out;
     }
 
     auto all = readAll();
-    for (int i = 0; i < K; ++i) out.set(i, all.test(pins[i]));
+    for (int i = 0; i < K; ++i) out.set(i, all.test((uint8_t)pins[i].value));
     return out;
   }
 
@@ -115,9 +118,9 @@ class McpPins {
 
   inline void initDevice_() {
     if (i2c_.wire) {
-      if (i2c_.i2cSDA >= 0 && i2c_.i2cSCL >= 0) {
-        i2c_.wire->setSDA(i2c_.i2cSDA);
-        i2c_.wire->setSCL(i2c_.i2cSCL);
+      if (true) {
+        i2c_.wire->setSDA((uint8_t)i2c_.i2cSDA.value);
+        i2c_.wire->setSCL((uint8_t)i2c_.i2cSCL.value);
       }
       i2c_.wire->begin();
       if (i2c_.clockHz) i2c_.wire->setClock(i2c_.clockHz);

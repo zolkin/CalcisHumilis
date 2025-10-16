@@ -14,10 +14,8 @@
 #include "dsp/Util.h"
 #include "hw/Screen.h"
 #include "hw/io/ButtonManager.h"
-#include "hw/io/GpioPins.h"
-#include "hw/io/McpPins.h"
 #include "hw/io/QuadManagerIO.h"
-#include "platform/pins.h"
+#include "platform/boards/Current.h"
 #include "platform/platform.h"
 #include "ui/Controller.h"
 #include "ui/InputMapper.h"
@@ -34,7 +32,8 @@ class UI {
   using CH = Calcis;
   static constexpr float cyc(float p) { return Calcis::cycles(p); }
   using CalcisTR = zlkm::ch::CalcisTR;
-  using Pins = ::zlkm::platform::Pins;
+  using PinDefs = typename ::zlkm::platform::boards::current::PinDefs;
+  using PinId = typename ::zlkm::platform::boards::current::PinId;
 
   static constexpr size_t kMaxPagesPerTab = 4;  // define sizes explicitly here
   static constexpr size_t kRotaryCount = 4;
@@ -42,17 +41,18 @@ class UI {
   using Selection =
       ::zlkm::ui::ParameterTabControlT<4, kMaxPagesPerTab, kRotaryCount>;
 
-  using PinExpander = hw::io::Mcp23017Pins;
-  using Sampler = hw::io::QuadManagerIO<PinExpander, kRotaryCount>;
+  using PinSource = typename ::zlkm::platform::boards::current::PinSource;
+  using Sampler = hw::io::QuadManagerIO<PinSource, kRotaryCount>;
   using SamplerCfg = typename Sampler::Cfg;
   using ControllerT = ::zlkm::ui::Controller<Sampler, Selection::count(),
                                              kMaxPagesPerTab, kRotaryCount>;
   using ViewT = ::zlkm::ui::View<Selection>;
 
-  using TabButtons = hw::io::ButtonManager<4, PinExpander>;
-  using Encoders = hw::io::QuadManagerIO<PinExpander, kRotaryCount>;
-  using TrigBtnCfg =
-      zlkm::hw::io::ButtonManager<1, zlkm::hw::io::GpioPins<1>>::Cfg;
+  using TabButtons = hw::io::ButtonManager<4, PinSource>;
+  using Encoders = hw::io::QuadManagerIO<PinSource, kRotaryCount>;
+  using TrigBtnCfg = zlkm::hw::io::ButtonManager<1, PinSource>::Cfg;
+  using TrigPinsArray =
+      typename zlkm::hw::io::ButtonManager<1, PinSource>::PinArrayT;
 
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
@@ -60,14 +60,13 @@ class UI {
     CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
 
     Cfg(const Cfg&) = delete;
-    Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = Pins::TAB_BUTTONS} {}
+  Cfg(Calcis::Cfg* pCfg_) : pCfg(pCfg_), tabBtns{.pins = PinDefs::TAB_BUTTONS} {}
 
     static constexpr int kNumTabs = 4;
 
     TabButtons::Cfg tabBtns;
 
     std::array<uint8_t, kNumTabs> tabPageCount{3, 1, 1, 1};
-    std::array<uint8_t, kRotaryCount> encPinsA{0, 2, 4, 13};
 
     Calcis::Cfg* pCfg;
 
@@ -76,7 +75,7 @@ class UI {
     float encClkDiv = 50.0f;
     uint32_t screenIdleMs = 10000;
     uint16_t pollMs = 5;
-    uint8_t trigPin = Pins::TRIG_IN;
+  PinId trigPin = PinDefs::TRIG_IN;  // kept for potential future use
   };
 
   using ViewCfg = typename ViewT::Cfg;
@@ -85,24 +84,19 @@ class UI {
       : ucfg_(cfg),
         fb_(fb),
         idleTimer_(ucfg_.screenIdleMs),
-        pinExp_(hw::io::I2cCfg{.address = 0x20,
-                               .wire = &Wire,
-                               .clockHz = 400000,
-                               .i2cSDA = Pins::I2C_SDA,
-                               .i2cSCL = Pins::I2C_SCL},
-                hw::io::PinMode::Output),
-        sampler_(pinExp_, SamplerCfg{.pinsA = Pins::ENCODER_A,
-                                     .pinsB = Pins::ENCODER_B,
+  pinSrc_(::zlkm::platform::boards::pico2::pinSource()),
+  sampler_(pinSrc_, SamplerCfg{.pinsA = PinDefs::ENCODER_A,
+             .pinsB = PinDefs::ENCODER_B,
                                      .usePullUp = true}),
         selection_(),
-        controller_(*ucfg_.pCfg, pinExp_, ucfg_.tabBtns, *fb_, sampler_,
-                    selection_, ucfg_.trigPin,
-                    TrigBtnCfg{.pins = {0},
+        controller_(*ucfg_.pCfg, pinSrc_, ucfg_.tabBtns, *fb_, sampler_,
+                    selection_,
+        TrigBtnCfg{.pins = TrigPinsArray{PinDefs::TRIG_IN},
                                .activeLow = true,
                                .usePullUp = true,
                                .debounceTicks = 5}),
-        view_(selection_, pinExp_,
-              ViewCfg{.ledPins_ = Pins::LEDS, .fps = 60, .pCfg = ucfg_.pCfg},
+    view_(selection_, pinSrc_,
+      ViewCfg{.ledPins_ = PinDefs::LEDS, .fps = 60, .pCfg = ucfg_.pCfg},
               fb_),
         filterParams_(&ucfg_.pCfg->filter) {
     initSpecs();
@@ -177,8 +171,8 @@ class UI {
   Calcis::Feedback* fb_{};
   zlkm::util::IdleTimer idleTimer_{10000};
 
-  // Hardware pieces reused
-  hw::io::Mcp23017Pins pinExp_;
+  // Pin source reference
+  PinSource& pinSrc_;
   audio::SafeFilterParams<CalcisTR::SR> filterParams_;
 
   // Components

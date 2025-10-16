@@ -6,9 +6,8 @@
 #include "CalcisHumilis.h"
 #include "dsp/Util.h"
 #include "hw/io/ButtonManager.h"
-#include "hw/io/GpioPins.h"
-#include "hw/io/McpPins.h"
 #include "math/Util.h"
+#include "platform/boards/Current.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"
 #include "util/IdleTimer.h"
@@ -28,25 +27,23 @@ class Controller {
   using Selection = ParameterTabControlT<N, PAGE_COUNT, ROTARY_COUNT>;
   using PPage = ::zlkm::ui::ParameterPageT<ROTARY_COUNT>;
   using PTab = ::zlkm::ui::ParameterTabT<PAGE_COUNT, ROTARY_COUNT>;
-  using PinExpander = zlkm::hw::io::Mcp23017Pins;
-  using TabButtons = zlkm::hw::io::ButtonManager<4, PinExpander>;
-  using TriggerPort = zlkm::hw::io::GpioPins<1>;
-  using TriggerBtnMgr = zlkm::hw::io::ButtonManager<1, TriggerPort>;
+  using PinDevice = typename SamplerT::DeviceT;
+  using TabButtons = zlkm::hw::io::ButtonManager<4, PinDevice>;
+  using TriggerBtnMgr = zlkm::hw::io::ButtonManager<1, PinDevice>;
 
   static constexpr int kAdcMaxCode = 4095;
 
-  Controller(Cfg& cfg, PinExpander& exp, const TabButtons::Cfg& buttonCfg,
-             Feedback& fb, SamplerT& sampler, Selection& selection,
-             uint8_t triggerPin,
+  Controller(Cfg& cfg, PinDevice& dev,
+             const typename TabButtons::Cfg& buttonCfg, Feedback& fb,
+             SamplerT& sampler, Selection& selection,
              const typename TriggerBtnMgr::Cfg& triggerBtnCfg)
       : cfg_(cfg),
         fb_(fb),
         sampler_(sampler),
         selection_(selection),
-        pinExp_(exp),
-        tabBtns_(pinExp_, buttonCfg),
-        triggerPort_({triggerPin}, zlkm::hw::io::PinMode::Input),
-        triggerBtn_(triggerPort_, triggerBtnCfg) {}
+        pinDev_(dev),
+        tabBtns_(pinDev_, buttonCfg),
+        triggerBtn_(pinDev_, triggerBtnCfg) {}
 
   // Optional accessor to the externally-owned selection
   Selection& selection() { return selection_; }
@@ -131,10 +128,8 @@ class Controller {
   // All per-page state lives in Selection's ParameterPage now
 
   // Expander-backed IO
-  PinExpander& pinExp_;
+  PinDevice& pinDev_;
   TabButtons tabBtns_;
-  // GPIO-backed trigger button
-  TriggerPort triggerPort_;
   TriggerBtnMgr triggerBtn_;
   bool activity_ = false;
 };

@@ -10,7 +10,7 @@
 #include "hw/screensavers/SaverMux.h"
 #include "hw/screensavers/StarField.h"
 #include "hw/screensavers/ThroughTheStars.h"
-#include "platform/pins.h"
+#include "platform/boards/Current.h"
 #include "platform/platform.h"
 #include "ui/TabControl.h"
 #include "ui/UiTypes.h"  // aliases: ScreenSSD
@@ -25,34 +25,36 @@ class View {
   using ScreenT = zlkm::ch::ScreenSSD;
   using ScreenSavers = hw::ssaver::SaverMux<U8G2, hw::ssaver::StarField,
                                             hw::ssaver::ThroughTheStars>;
-  using PinExpander = zlkm::hw::io::Mcp23017Pins;
+  using PinSource = typename ::zlkm::platform::boards::current::PinSource;
   using SaverCfg = typename ScreenSavers::Cfg;
   using Calcis = zlkm::ch::Calcis;
   using CalcisTR = zlkm::ch::CalcisTR;
   using CalcisCfg = zlkm::ch::Calcis::Cfg;
   using Feedback = typename Calcis::Feedback;
-  using Pins = ::zlkm::platform::Pins;
+  using PinDefs = typename ::zlkm::platform::boards::current::PinDefs;
+  using Pin = typename ::zlkm::platform::boards::current::PinId;
+  template <size_t N>
+  using PinArray = std::array<Pin, N>;
 
   struct Cfg {
-    std::array<uint8_t, Selection::TAB_COUNT> ledPins_{};
+    PinArray<Selection::TAB_COUNT> ledPins_{};
     uint32_t fps = 60;
     CalcisCfg* pCfg = nullptr;
   };
 
-  View(Selection& selection, PinExpander& exp, const Cfg& cfg,
+  View(Selection& selection, PinSource& dev, const Cfg& cfg,
        Feedback* fb = nullptr)
       : screen_({}),
         selection_(selection),
         cfg_(cfg),
         saver_(SaverCfg()),
-        pinExp_(exp),
-        triggerLED_(Pins::LED_TRIGGER),
-        clippingLED_(Pins::LED_CLIPPING),
+        pinDev_(dev),
+  triggerLED_((uint8_t)PinDefs::LED_TRIGGER.pin().value),
+  clippingLED_((uint8_t)PinDefs::LED_CLIPPING.pin().value),
         fb_(fb) {
-    for (int i = 0; i < 4; ++i) {
-      pinExp_.setPinMode(cfg_.ledPins_[i], zlkm::hw::io::PinMode::Output);
-      pinExp_.writePin(cfg_.ledPins_[i], false);
-    }
+    for (int i = 0; i < 4; ++i)
+      pinDev_.setPinMode(cfg_.ledPins_[i], zlkm::hw::io::PinMode::Output);
+    for (int i = 0; i < 4; ++i) pinDev_.writePin(cfg_.ledPins_[i], false);
     // Construct button manager on the expander
     updateTabLEDs_();
     lastUpdateMs_ = millis();
@@ -138,7 +140,7 @@ class View {
   void updateTabLEDs_() {
     const uint8_t active = selection_.currentTabIndex();
     for (uint8_t i = 0; i < 4; ++i)
-      pinExp_.writePin(cfg_.ledPins_[i], i == active);
+      pinDev_.writePin(cfg_.ledPins_[i], i == active);
   }
 
   void tickLED_() {
@@ -161,7 +163,7 @@ class View {
   Cfg cfg_{};
   uint32_t lastUpdateMs_ = 0;
   uint32_t updateInterval_ = 0;
-  PinExpander& pinExp_;
+  PinSource& pinDev_;
   // Moved from UI: LEDs
   JLed triggerLED_;
   JLed clippingLED_;

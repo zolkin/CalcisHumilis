@@ -2,6 +2,7 @@
 #include <array>
 #include <bitset>
 
+#include "hw/io/Pin.h"
 #include "hw/io/Types.h"
 
 namespace zlkm::hw::io {
@@ -10,10 +11,11 @@ template <int N, typename PinGroupT>
 class ButtonManager {
  public:
   using Bits = std::bitset<N>;
+  using PinIdT = typename PinGroupT::PinIdT;
+  using PinArrayT = std::array<PinIdT, N>;
 
   struct Cfg {
-    std::array<uint8_t, N>
-        pins{};  // backend-native ids (MCP:0..15; GPIO:indexes)
+    PinArrayT pins{};  // backend-native ids (native to PinGroupT)
     bool activeLow = true;
     bool usePullUp = false;
     uint8_t debounceTicks = 5;  // consecutive equal samples to accept change

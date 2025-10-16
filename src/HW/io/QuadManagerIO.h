@@ -2,6 +2,7 @@
 #include <array>
 #include <bitset>
 
+#include "Pin.h"
 #include "Types.h"
 
 // Fallback for perf macro if Profiler.h is not included
@@ -14,13 +15,17 @@ namespace zlkm::hw::io {
 template <typename PinGroupT, int N>
 class QuadManagerIO {
  public:
+  using DeviceT = PinGroupT;
+  using PinIdT = typename PinGroupT::PinIdT;
+  template <size_t M>
+  using PinArrayT = std::array<PinIdT, M>;
   struct Cfg {
-    std::array<uint8_t, N>
+    PinArrayT<N>
         pinsA{};  // Back-end native ids:
                   //  - Mcp23017Pins: MCP pins [0..15]
                   //  - GpioPins<M> : INDEXES into that GpioPins group [0..M-1]
-    std::array<uint8_t, N> pinsB{};  // same domain as pinsA
-    bool usePullUp = true;           // enable pull-ups on A/B
+    PinArrayT<N> pinsB{};   // same domain as pinsA
+    bool usePullUp = true;  // enable pull-ups on A/B
   };
 
   QuadManagerIO(const QuadManagerIO&) = delete;
@@ -49,7 +54,7 @@ class QuadManagerIO {
   }
 
   // Convenience: B = A + 1 layout
-  QuadManagerIO(PinGroupT& dev, const std::array<uint8_t, N>& pinsA,
+  QuadManagerIO(PinGroupT& dev, const PinArrayT<N>& pinsA,
                 bool usePullUp = true)
       : QuadManagerIO(dev, makeCfgAPlus1_(pinsA, usePullUp)) {}
 
@@ -107,18 +112,18 @@ class QuadManagerIO {
       /*10->00*/ +1, /*10->01*/ 0,  /*10->10*/ 0,  /*10->11*/ -1,
       /*11->00*/ 0,  /*11->01*/ -1, /*11->10*/ +1, /*11->11*/ 0};
 
-  static inline Cfg makeCfgAPlus1_(const std::array<uint8_t, N>& pinsA,
-                                   bool usePullUp) {
+  static inline Cfg makeCfgAPlus1_(const PinArrayT<N>& pinsA, bool usePullUp) {
     Cfg c{};
     c.pinsA = pinsA;
-    for (int i = 0; i < N; ++i) c.pinsB[i] = (uint8_t)(pinsA[i] + 1);
+    for (int i = 0; i < N; ++i)
+      c.pinsB[i] = PinIdT{(uint8_t)(pinsA[i].value + 1)}; // default group ctor
     c.usePullUp = usePullUp;
     return c;
   }
 
   PinGroupT& dev_;
   Cfg cfg_{};
-  std::array<uint8_t, 2 * N> readOrder_{};  // [A0..A{N-1}, B0..B{N-1}]
+  PinArrayT<2 * N> readOrder_{};  // [A0..A{N-1}, B0..B{N-1}]
   std::array<Enc, N> enc_{};
 };
 

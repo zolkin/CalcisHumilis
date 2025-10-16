@@ -16,12 +16,12 @@ struct FakePins {
 
   void setPin(uint8_t id, bool high) { level[id] = high; }
 
-  void setPinMode(uint8_t /*id*/, PinMode /*m*/) {}
+  void setPinMode(PinId /*id*/, PinMode /*m*/) {}
 
   template <size_t K>
-  std::bitset<K> readPins(const std::array<uint8_t, K>& idxs) const {
+  std::bitset<K> readPins(const std::array<PinId, K>& idxs) const {
     std::bitset<K> out;
-    for (size_t i = 0; i < K; ++i) out.set(i, level[idxs[i]]);
+    for (size_t i = 0; i < K; ++i) out.set(i, level[idxs[i].value]);
     return out;
   }
 };
@@ -36,8 +36,8 @@ void test_single_cw_cycle_counts_positive() {
   // Encoder 0 uses pins A=0, B=1
   using QM = QuadManagerIO<FakePins, 1>;
   QM::Cfg cfg{};
-  cfg.pinsA[0] = 0;  // A
-  cfg.pinsB[0] = 1;  // B
+  cfg.pinsA[0] = PinId{0};  // A
+  cfg.pinsB[0] = PinId{1};  // B
 
   // Initialize to 00
   setAB(fp, 0, 1, 0b00);
@@ -58,8 +58,8 @@ void test_ccw_cycle_counts_negative() {
   FakePins fp;
   using QM = QuadManagerIO<FakePins, 1>;
   QM::Cfg cfg{};
-  cfg.pinsA[0] = 2;  // A
-  cfg.pinsB[0] = 3;  // B
+  cfg.pinsA[0] = PinId{2};  // A
+  cfg.pinsB[0] = PinId{3};  // B
   setAB(fp, 2, 3, 0b00);
   QM qm(fp, cfg);
 
@@ -77,8 +77,8 @@ void test_illegal_jump_ignored() {
   FakePins fp;
   using QM = QuadManagerIO<FakePins, 1>;
   QM::Cfg cfg{};
-  cfg.pinsA[0] = 4;
-  cfg.pinsB[0] = 5;
+  cfg.pinsA[0] = PinId{4};
+  cfg.pinsB[0] = PinId{5};
   setAB(fp, 4, 5, 0b00);
   QM qm(fp, cfg);
 

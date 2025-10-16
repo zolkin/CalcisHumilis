@@ -3,6 +3,7 @@
 #include <array>
 #include <bitset>
 
+#include "hw/io/Pin.h"
 #include "hw/io/Types.h"
 
 namespace zlkm::hw::io {
@@ -10,7 +11,8 @@ namespace zlkm::hw::io {
 template <size_t N>
 class GpioPins {
  public:
-  using Pins = std::array<uint8_t, N>;
+  using PinIdT = PinId;
+  using Pins = PinIdArray<N>;
   using Modes = std::array<PinMode, N>;
   using Bits = std::bitset<N>;
 
@@ -32,44 +34,46 @@ class GpioPins {
 
   inline void writeAll(const Bits& b) const {
     for (size_t i = 0; i < N; ++i)
-      ::digitalWrite(pins_[i], b.test(i) ? HIGH : LOW);
+      ::digitalWrite((uint8_t)pins_[i].value, b.test(i) ? HIGH : LOW);
   }
 
   inline void writePin(size_t i, bool high) const {
-    ::digitalWrite(pins_[i], high ? HIGH : LOW);
+    ::digitalWrite((uint8_t)pins_[i].value, high ? HIGH : LOW);
   }
 
   inline Bits readAll() const {
     Bits out;
     for (size_t i = 0; i < N; ++i)
-      if (::digitalRead(pins_[i])) out.set(i);
+      if (::digitalRead((uint8_t)pins_[i].value)) out.set(i);
     return out;
   }
 
   template <size_t K>
-  inline std::bitset<K> readPins(const std::array<uint8_t, K>& idxs) const {
+  inline std::bitset<K> readPins(const std::array<PinId, K>& idxs) const {
     std::bitset<K> out;
-    for (int i = 0; i < K; ++i) out.set(i, readPin(idxs[i]));
+    for (int i = 0; i < K; ++i) out.set(i, readPin((uint8_t)idxs[i].value));
     return out;
   }
 
-  inline bool readPin(size_t i) const { return ::digitalRead(pins_[i]) != 0; }
+  inline bool readPin(size_t i) const {
+    return ::digitalRead((uint8_t)pins_[i].value) != 0;
+  }
 
-  inline uint8_t rawPin(size_t i) const { return pins_[i]; }
+  inline uint8_t rawPin(size_t i) const { return pins_[i].value; }
 
  private:
   Pins pins_;
 
-  static inline void applyPinMode(uint8_t pin, PinMode m) {
+  static inline void applyPinMode(PinId pin, PinMode m) {
     switch (m) {
       case PinMode::Input:
-        ::pinMode(pin, INPUT);
+        ::pinMode((uint8_t)pin.value, INPUT);
         break;
       case PinMode::InputPullUp:
-        ::pinMode(pin, INPUT_PULLUP);
+        ::pinMode((uint8_t)pin.value, INPUT_PULLUP);
         break;
       case PinMode::Output:
-        ::pinMode(pin, OUTPUT);
+        ::pinMode((uint8_t)pin.value, OUTPUT);
         break;
     }
   }

@@ -14,12 +14,12 @@ struct FakePins {
 
   void setPin(uint8_t id, bool high) { level[id] = high; }
 
-  void setPinMode(uint8_t /*id*/, PinMode /*m*/) {}
+  void setPinMode(PinId /*id*/, PinMode /*m*/) {}
 
   template <size_t K>
-  std::bitset<K> readPins(const std::array<uint8_t, K>& idxs) const {
+  std::bitset<K> readPins(const std::array<PinId, K>& idxs) const {
     std::bitset<K> out;
-    for (size_t i = 0; i < K; ++i) out.set(i, level[idxs[i]]);
+    for (size_t i = 0; i < K; ++i) out.set(i, level[idxs[i].value]);
     return out;
   }
 };
@@ -28,10 +28,10 @@ void test_debounce_rising_after_threshold() {
   FakePins fp;
   using BM = ButtonManager<1, FakePins>;
   BM::Cfg cfg{};
-  cfg.pins[0] = 0;        // one button on raw pin 0
-  cfg.activeLow = true;   // pressed = LOW on the wire
-  cfg.usePullUp = false;  // irrelevant for fake
-  cfg.debounceTicks = 3;  // require 3 stable samples
+  cfg.pins[0] = PinId{0};  // one button on raw pin 0
+  cfg.activeLow = true;    // pressed = LOW on the wire
+  cfg.usePullUp = false;   // irrelevant for fake
+  cfg.debounceTicks = 3;   // require 3 stable samples
 
   // Idle high (not pressed)
   fp.setPin(0, true);
@@ -63,7 +63,7 @@ void test_debounce_falling_after_threshold() {
   FakePins fp;
   using BM = ButtonManager<1, FakePins>;
   BM::Cfg cfg{};
-  cfg.pins[0] = 1;
+  cfg.pins[0] = PinId{1};
   cfg.activeLow = true;
   cfg.debounceTicks = 2;
 
