@@ -11,10 +11,10 @@
 
 namespace zlkm::hw::io {
 
-template <typename PinGroupT, int N>
+template <typename PinDeviceT, int N>
 class QuadManagerIO {
  public:
-  using DeviceT = PinGroupT;
+  using DeviceT = PinDeviceT;
   using PinIdT = ::zlkm::hw::io::PinId;            // use regular PinId
   using PinGroupIdT = ::zlkm::hw::io::PinGroupId;  // explicit group id
 
@@ -32,12 +32,12 @@ class QuadManagerIO {
   QuadManagerIO& operator=(QuadManagerIO&&) = default;
 
   // Full mapping ctor
-  QuadManagerIO(PinGroupT& dev, const Cfg& cfg) : dev_(dev), cfg_(cfg) {
+  QuadManagerIO(DeviceT& dev, const Cfg& cfg) : dev_(dev), cfg_(cfg) {
     const PinMode pm = cfg_.usePullUp ? PinMode::InputPullUp : PinMode::Input;
     dev_.setPinsMode(cfg.pins, pm);
 
     // Prime previous states from hardware
-    auto bits = dev_.template readGroupPins<N * 2>(cfg.pins);
+    auto bits = dev_.readGroupPins(cfg.pins);
     for (int i = 0; i < N; ++i) {
       const uint8_t a = bits.test(i * 2);
       const uint8_t b = bits.test(i * 2 + 1);
@@ -49,7 +49,7 @@ class QuadManagerIO {
   // Poll once; apply deltas
   inline void update() {
     ZLKM_PERF_SCOPE("QuadManagerIO::update");
-    auto bits = dev_.template readGroupPins<N * 2>(cfg_.pins);
+    auto bits = dev_.readGroupPins(cfg_.pins);
     for (int i = 0; i < N; ++i) {
       Enc& e = enc_[i];
       const uint8_t a = bits.test(i * 2);
@@ -77,7 +77,7 @@ class QuadManagerIO {
 
   // Reset baselines to current counts (e.g., when changing page/tab)
   inline void resetBaselines() {
-    auto bits = dev_.template readGroupPins<N * 2>(cfg_.pins);
+    auto bits = dev_.readGroupPins(cfg_.pins);
     for (int i = 0; i < N; ++i) {
       const uint8_t a = bits.test(i * 2);
       const uint8_t b = bits.test(i * 2 + 1);
@@ -85,6 +85,9 @@ class QuadManagerIO {
       enc_[i].delta = 0;
     }
   }
+
+  inline DeviceT& device() { return dev_; }
+  inline const DeviceT& device() const { return dev_; }
 
  private:
   struct Enc {
@@ -99,7 +102,7 @@ class QuadManagerIO {
       /*10->00*/ +1, /*10->01*/ 0,  /*10->10*/ 0,  /*10->11*/ -1,
       /*11->00*/ 0,  /*11->01*/ -1, /*11->10*/ +1, /*11->11*/ 0};
 
-  PinGroupT& dev_;
+  DeviceT& dev_;
   Cfg cfg_{};
   std::array<Enc, N> enc_{};
 };

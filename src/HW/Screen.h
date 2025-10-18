@@ -7,7 +7,7 @@
 
 namespace zlkm::hw {
 
-using PinDefs = typename ::zlkm::platform::boards::current::PinDefs;
+using CurrentBoard = typename ::zlkm::platform::boards::Current;
 
 // Pick your controller at compile time:
 enum class ScreenController : uint8_t { SSD1306_128x64, SH1107_64x128 };
@@ -29,11 +29,13 @@ struct U8g2Driver<ScreenController::SH1107_64x128> {
 template <ScreenController C>
 class Screen {
  public:
+  using PinId = typename ::zlkm::hw::io::PinId;
+
   struct Cfg {
-  ::zlkm::hw::io::PinId pinSCK = PinDefs::OLED_SCK.pin();
-  ::zlkm::hw::io::PinId pinMOSI = PinDefs::OLED_MOSI.pin();
-  ::zlkm::hw::io::PinId pinDC = PinDefs::OLED_DC.pin();
-  ::zlkm::hw::io::PinId pinRST = PinDefs::OLED_RST.pin();
+    PinId pinSCK = CurrentBoard::OLED_SCK.pin();
+    PinId pinMOSI = CurrentBoard::OLED_MOSI.pin();
+    PinId pinDC = CurrentBoard::OLED_DC.pin();
+    PinId pinRST = CurrentBoard::OLED_RST.pin();
 
     // SPI & display
     uint32_t spiHz = 8'000'000;           // use u8g2.setBusClock()

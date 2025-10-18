@@ -25,34 +25,34 @@ class View {
   using ScreenT = zlkm::ch::ScreenSSD;
   using ScreenSavers = hw::ssaver::SaverMux<U8G2, hw::ssaver::StarField,
                                             hw::ssaver::ThroughTheStars>;
-  using PinSource = typename ::zlkm::platform::boards::current::PinSource;
+  using CurBoard = ::zlkm::platform::boards::Current;
+  using PinSource = CurBoard::PinSource;
+  using Pin = CurBoard::PinId;
   using SaverCfg = typename ScreenSavers::Cfg;
   using Calcis = zlkm::ch::Calcis;
   using CalcisTR = zlkm::ch::CalcisTR;
   using CalcisCfg = zlkm::ch::Calcis::Cfg;
   using Feedback = typename Calcis::Feedback;
-  using PinDefs = typename ::zlkm::platform::boards::current::PinDefs;
-  using Pin = typename ::zlkm::platform::boards::current::PinId;
-  template <size_t N>
-  using PinArray = std::array<Pin, N>;
 
   struct Cfg {
     uint32_t fps = 60;
     CalcisCfg* pCfg = nullptr;
   };
 
-  View(Selection& selection, PinSource& dev, const Cfg& cfg,
-       Feedback* fb = nullptr)
+  static CurBoard::PinSource& pins() { return CurBoard::pins(); }
+
+  View(Selection& selection, const Cfg& cfg, Feedback* fb)
       : screen_({}),
         selection_(selection),
         cfg_(cfg),
         saver_(SaverCfg()),
-        pinDev_(dev),
-        triggerLED_((uint8_t)PinDefs::LED_TRIGGER.pin().value),
-        clippingLED_((uint8_t)PinDefs::LED_CLIPPING.pin().value),
+        triggerLED_(CurBoard::LED_TRIGGER.pin().value),
+        clippingLED_(CurBoard::LED_CLIPPING.pin().value),
         fb_(fb) {
-    pinDev_.setPinsMode(PinDefs::LEDS, zlkm::hw::io::PinMode::Output);
-    pinDev_.writePins(PinDefs::LEDS, false);
+    assert(cfg_.pCfg != nullptr && "View requires valid Calcis config");
+
+    pins().setPinsMode(CurBoard::LEDS, zlkm::hw::io::PinMode::Output);
+    pins().writePins(CurBoard::LEDS, false);
     // Construct button manager on the expander
     updateTabLEDs_();
     lastUpdateMs_ = millis();
@@ -139,7 +139,7 @@ class View {
     const uint8_t activeTab = selection_.currentTabIndex();
     for (uint8_t i = 0; i < 4; ++i) {
       const bool state = (i == activeTab);
-      pinDev_.writeGroupPin(PinDefs::LEDS.group(), PinDefs::LEDS[i], state);
+      pins().writeGroupPin(CurBoard::LEDS.group(), CurBoard::LEDS[i], state);
     }
   }
 
@@ -163,7 +163,6 @@ class View {
   Cfg cfg_{};
   uint32_t lastUpdateMs_ = 0;
   uint32_t updateInterval_ = 0;
-  PinSource& pinDev_;
   // Moved from UI: LEDs
   JLed triggerLED_;
   JLed clippingLED_;

@@ -15,15 +15,9 @@ template <size_t N>
 using PinIdArray = std::array<PinId, N>;
 
 template <size_t N>
-inline constexpr PinIdArray<N> defaultPinSet() {
-  PinIdArray<N> pins{};
-  for (size_t i = 0; i < N; ++i) pins[i] = PinId{static_cast<uint8_t>(i)};
-  return pins;
-}
-
-template <size_t N>
 struct GroupPinArray : public PinIdArray<N> {
   using Base = PinIdArray<N>;
+
   GroupPinArray() = default;
   GroupPinArray(PinGroupId group, Base pins) : Base(pins), group_(group) {}
 
@@ -43,6 +37,22 @@ struct GroupPinArray : public PinIdArray<N> {
 
   PinGroupId group_ = PinGroupId{0};
 };
+
+template <class PinGroup>
+struct PinArraySizeHelper;
+
+template <size_t N>
+struct PinArraySizeHelper<GroupPinArray<N>> {
+  static constexpr size_t value = N;
+};
+
+template <size_t N>
+struct PinArraySizeHelper<PinIdArray<N>> {
+  static constexpr size_t value = N;
+};
+
+template <typename PinGroupT>
+static constexpr size_t PinArraySizeV = PinArraySizeHelper<PinGroupT>::value;
 
 enum class PinMode : uint8_t { Input, InputPullUp, Output };
 

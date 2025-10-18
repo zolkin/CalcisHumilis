@@ -33,17 +33,15 @@ class Controller {
 
   static constexpr int kAdcMaxCode = 4095;
 
-  Controller(Cfg& cfg, PinDevice& dev,
-             const typename TabButtons::Cfg& buttonCfg, Feedback& fb,
+  Controller(Cfg& cfg, const typename TabButtons::Cfg& buttonCfg, Feedback& fb,
              SamplerT& sampler, Selection& selection,
              const typename TriggerBtnMgr::Cfg& triggerBtnCfg)
       : cfg_(cfg),
         fb_(fb),
         sampler_(sampler),
         selection_(selection),
-        pinDev_(dev),
-        tabBtns_(pinDev_, buttonCfg),
-        triggerBtn_(pinDev_, triggerBtnCfg) {}
+        tabBtns_(sampler_.device(), buttonCfg),
+        triggerBtn_(sampler_.device(), triggerBtnCfg) {}
 
   // Optional accessor to the externally-owned selection
   Selection& selection() { return selection_; }
@@ -128,7 +126,6 @@ class Controller {
   // All per-page state lives in Selection's ParameterPage now
 
   // Expander-backed IO
-  PinDevice& pinDev_;
   TabButtons tabBtns_;
   TriggerBtnMgr triggerBtn_;
   bool activity_ = false;
