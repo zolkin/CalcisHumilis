@@ -60,10 +60,10 @@ struct PinArraySizeHelper<PinIdArray<N>> {
 template <typename PinGroupT>
 static constexpr size_t PinArraySizeV = PinArraySizeHelper<PinGroupT>::value;
 
-PinId getPin(const PinId pin) { return pin; }
+inline PinId getPin(const PinId pin) { return pin; }
 
 template <typename PinT>
-PinId getPin(const PinT& pin) {
+inline PinId getPin(const PinT& pin) {
   return pin.pin();
 }
 

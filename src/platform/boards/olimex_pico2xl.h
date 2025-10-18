@@ -13,7 +13,7 @@ namespace zlkm::platform::boards::olimex_pico2xl {
 // Compose a pin source for the board. Only on-board GPIOs are used
 // via GpioPins and muxed by PinMux with a single device (transparent mode).
 struct Board {
-  static constexpr int GPIO_PIN_COUNT = 60;
+  static constexpr int GPIO_PIN_COUNT = 48;
   using PinId = zlkm::hw::io::PinId;  // low-level raw pin id
   using GpioPins = zlkm::hw::io::GpioPins<GPIO_PIN_COUNT>;
   using PinSource = zlkm::hw::io::PinMux<uint8_t, GpioPins>;  // single device

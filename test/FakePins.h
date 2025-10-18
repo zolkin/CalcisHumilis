@@ -9,6 +9,9 @@ namespace zlkm::test {
 using namespace zlkm::hw::io;
 
 struct FakePins {
+  template <size_t N>
+  using GroupPinArrayT = GroupPinArray<N>;
+
   std::array<bool, 16> level{};  // index by raw pin id
 
   void setPin(PinId id, bool high) { level[id.value] = high; }

@@ -13,6 +13,13 @@
 #if defined(ARDUINO_ARCH_RP2350) || defined(PICO_RP2350) || defined(PICO_BOARD)
 namespace zlkm::platform {
 inline uint8_t get_core_num() { return ::get_core_num(); }
+inline char* getSdkVersion() {
+  static char versionStr[64];
+  snprintf(versionStr, sizeof(versionStr), "PicoSdk: %d.%d.%d",
+           PICO_SDK_VERSION_MAJOR, PICO_SDK_VERSION_MINOR,
+           PICO_SDK_VERSION_REVISION);
+  return versionStr;
+}
 }  // namespace zlkm::platform
 #endif
 

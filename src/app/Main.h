@@ -21,6 +21,7 @@ class MainApp {
     Log.begin(LOG_LEVEL_TRACE, &Serial);
     get();  // initialize the app for the first time
     delay(100);
+    Log.infoln("SDK Version: %s", zlkm::platform::getSdkVersion());
     Log.infoln("Application %s started on core0", name);
     c0Started_ = true;
     while (!c1Started_) {
