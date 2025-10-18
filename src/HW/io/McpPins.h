@@ -7,7 +7,6 @@
 #include <bitset>
 
 #include "hw/io/I2CConfig.h"
-#include "hw/io/Types.h"
 
 namespace zlkm::hw::io {
 
@@ -37,16 +36,21 @@ class McpPins {
 
   McpPins(const Modes& modes, I2cCfg i2c) : dev_{}, i2c_(i2c) {
     initDevice_();
-    for (int i = 0; i < N; ++i) applyPinMode((uint8_t)i, modes[i]);
+    for (int i = 0; i < N; ++i) applyPinMode(PinId{i}, modes[i]);
   }
 
   inline bool isOk() const { return ok_; }
 
   inline void setMode(PinMode m) {
-    for (int i = 0; i < N; ++i) applyPinMode((uint8_t)i, m);
+    for (uint8_t i = 0; i < N; ++i) applyPinMode(PinId{i}, m);
   }
 
-  inline void setPinMode(int i, PinMode m) { applyPinMode((uint8_t)i, m); }
+  inline void setPinMode(PinId pin, PinMode m) { applyPinMode(pin, m); }
+
+  template <size_t K>
+  inline void setPinsMode(const PinIdArray<K>& pins, PinMode m) {
+    for (int i = 0; i < K; ++i) applyPinMode(pins[i], m);
+  }
 
   inline void writeAll(Bits b) {
     uint16_t v = (uint16_t)b.to_ulong();
@@ -54,9 +58,20 @@ class McpPins {
     dev_.writeGPIO((uint8_t)(v >> 8), 1);    // GPIOB
   }
 
+  inline void writeAll(bool b) {
+    uint16_t v = b ? 0xFFFF : 0x0000;
+    dev_.writeGPIO((uint8_t)(v & 0xFF), 0);  // GPIOA
+    dev_.writeGPIO((uint8_t)(v >> 8), 1);    // GPIOB
+  }
+
   inline void writeHalf(int port, HalfBits b) {
     dev_.writeGPIO((uint8_t)b.to_ulong(),
                    (uint8_t)port);  // 0 = GPIOA, 1 = GPIOB
+  }
+
+  inline void writeHalf(int port, bool b) {
+    uint8_t v = b ? 0xFF : 0x00;
+    dev_.writeGPIO(v, (uint8_t)port);  // 0 = GPIOA, 1 = GPIOB
   }
 
   inline void writePin(int i, bool high) {
@@ -74,7 +89,7 @@ class McpPins {
   }
 
   template <size_t K>
-  inline std::bitset<K> readPins(const std::array<PinId, K>& pins) const {
+  inline std::bitset<K> readPins(const PinIdArray<K>& pins) const {
     bool anyA = false, anyB = false;
     for (int i = 0; i < K; ++i) {
       uint8_t p = (uint8_t)pins[i].value;
@@ -137,9 +152,9 @@ class McpPins {
     }
   }
 
-  inline void applyPinMode(uint8_t p, PinMode m) {
+  inline void applyPinMode(PinId p, PinMode m) {
     static const uint8_t map[] = {INPUT, INPUT_PULLUP, OUTPUT};
-    dev_.pinMode(p, map[(int)m]);
+    dev_.pinMode(p.value, map[(int)m]);
   }
 };
 

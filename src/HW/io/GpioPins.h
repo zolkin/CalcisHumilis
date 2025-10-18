@@ -4,7 +4,6 @@
 #include <bitset>
 
 #include "hw/io/Pin.h"
-#include "hw/io/Types.h"
 
 namespace zlkm::hw::io {
 
@@ -17,53 +16,44 @@ class GpioPins {
   using Bits = std::bitset<N>;
 
   // Single mode for all pins
-  explicit GpioPins(const Pins& pins, PinMode mode_for_all) : pins_(pins) {
-    setMode(mode_for_all);
+  explicit GpioPins(PinMode mode_for_all) { setMode(mode_for_all); }
+
+  void setMode(PinMode mode) {
+    for (uint8_t i = 0; i < N; ++i) applyPinMode(PinId{i}, mode);
   }
 
   // Per-pin modes
-  GpioPins(const Pins& pins, const Modes& modes) : pins_(pins) {
-    for (size_t i = 0; i < N; ++i) applyPinMode(pins_[i], modes[i]);
+  GpioPins(const Modes& modes) {
+    for (uint8_t i = 0; i < N; ++i) applyPinMode(PinId{i}, modes[i]);
   }
 
-  inline void setMode(PinMode m) {
-    for (size_t i = 0; i < N; ++i) applyPinMode(pins_[i], m);
-  }
-
-  inline void setPinMode(size_t i, PinMode m) { applyPinMode(pins_[i], m); }
+  inline void setPinMode(PinId pin, PinMode m) { applyPinMode(pin, m); }
 
   inline void writeAll(const Bits& b) const {
-    for (size_t i = 0; i < N; ++i)
-      ::digitalWrite((uint8_t)pins_[i].value, b.test(i) ? HIGH : LOW);
+    for (uint8_t i = 0; i < N; ++i) ::digitalWrite(i, b.test(i) ? HIGH : LOW);
   }
 
-  inline void writePin(size_t i, bool high) const {
-    ::digitalWrite((uint8_t)pins_[i].value, high ? HIGH : LOW);
+  inline void writePin(PinId pin, bool high) const {
+    ::digitalWrite(pin.value, high ? HIGH : LOW);
   }
 
   inline Bits readAll() const {
     Bits out;
-    for (size_t i = 0; i < N; ++i)
-      if (::digitalRead((uint8_t)pins_[i].value)) out.set(i);
+    for (uint8_t i = 0; i < N; ++i)
+      if (::digitalRead(i)) out.set(i);
     return out;
   }
 
   template <size_t K>
-  inline std::bitset<K> readPins(const std::array<PinId, K>& idxs) const {
+  inline std::bitset<K> readPins(const PinIdArray<K>& pins) const {
     std::bitset<K> out;
-    for (int i = 0; i < K; ++i) out.set(i, readPin((uint8_t)idxs[i].value));
+    for (int i = 0; i < K; ++i) out.set(i, readPin(pins[i].value));
     return out;
   }
 
-  inline bool readPin(size_t i) const {
-    return ::digitalRead((uint8_t)pins_[i].value) != 0;
-  }
-
-  inline uint8_t rawPin(size_t i) const { return pins_[i].value; }
+  inline bool readPin(uint8_t i) const { return ::digitalRead(i) != 0; }
 
  private:
-  Pins pins_;
-
   static inline void applyPinMode(PinId pin, PinMode m) {
     switch (m) {
       case PinMode::Input:

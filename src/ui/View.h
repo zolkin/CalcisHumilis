@@ -37,7 +37,6 @@ class View {
   using PinArray = std::array<Pin, N>;
 
   struct Cfg {
-    PinArray<Selection::TAB_COUNT> ledPins_{};
     uint32_t fps = 60;
     CalcisCfg* pCfg = nullptr;
   };
@@ -52,9 +51,8 @@ class View {
         triggerLED_((uint8_t)PinDefs::LED_TRIGGER.pin().value),
         clippingLED_((uint8_t)PinDefs::LED_CLIPPING.pin().value),
         fb_(fb) {
-    for (int i = 0; i < 4; ++i)
-      pinDev_.setPinMode(cfg_.ledPins_[i], zlkm::hw::io::PinMode::Output);
-    for (int i = 0; i < 4; ++i) pinDev_.writePin(cfg_.ledPins_[i], false);
+    pinDev_.setPinsMode(PinDefs::LEDS, zlkm::hw::io::PinMode::Output);
+    pinDev_.writePins(PinDefs::LEDS, false);
     // Construct button manager on the expander
     updateTabLEDs_();
     lastUpdateMs_ = millis();
@@ -138,9 +136,11 @@ class View {
 
  private:
   void updateTabLEDs_() {
-    const uint8_t active = selection_.currentTabIndex();
-    for (uint8_t i = 0; i < 4; ++i)
-      pinDev_.writePin(cfg_.ledPins_[i], i == active);
+    const uint8_t activeTab = selection_.currentTabIndex();
+    for (uint8_t i = 0; i < 4; ++i) {
+      const bool state = (i == activeTab);
+      pinDev_.writeGroupPin(PinDefs::LEDS.group(), PinDefs::LEDS[i], state);
+    }
   }
 
   void tickLED_() {

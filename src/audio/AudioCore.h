@@ -1,4 +1,6 @@
 #pragma once
+#include <AudioTools.h>
+
 #include "AudioTraits.h"
 
 namespace zlkm::audio {
@@ -75,4 +77,4 @@ class AudioCore {
   uint32_t lastTrigCounter_ = 0;
 };
 
-} // namespace zlkm::audio
+}  // namespace zlkm::audio

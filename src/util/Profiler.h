@@ -47,8 +47,6 @@
 
 #define ZLKM_PROFILE_PREFIX_MAX (ZLKM_PROFILE_MAX_DEPTH * 6 + 8)
 
-#include <ArduinoLog.h>
-
 #include <array>
 #include <cstdint>
 #include <type_traits>

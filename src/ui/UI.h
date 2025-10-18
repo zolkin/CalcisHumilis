@@ -51,8 +51,6 @@ class UI {
   using TabButtons = hw::io::ButtonManager<4, PinSource>;
   using Encoders = hw::io::QuadManagerIO<PinSource, kRotaryCount>;
   using TrigBtnCfg = zlkm::hw::io::ButtonManager<1, PinSource>::Cfg;
-  using TrigPinsArray =
-      typename zlkm::hw::io::ButtonManager<1, PinSource>::PinArrayT;
 
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
@@ -86,36 +84,18 @@ class UI {
         fb_(fb),
         idleTimer_(ucfg_.screenIdleMs),
         pinSrc_(::zlkm::platform::boards::pico2::pinSource()),
-        sampler_(
-            pinSrc_,
-            SamplerCfg{
-                .group = PinDefs::GROUP_EXPANDER,
-                .pinsA =
-                    [] {
-                      std::array<::zlkm::hw::io::PinId, kRotaryCount> ids{};
-                      for (size_t i = 0; i < kRotaryCount; ++i)
-                        ids[i] = PinDefs::ENCODER_A[i].pin();
-                      return ids;
-                    }(),
-                .pinsB =
-                    [] {
-                      std::array<::zlkm::hw::io::PinId, kRotaryCount> ids{};
-                      for (size_t i = 0; i < kRotaryCount; ++i)
-                        ids[i] = PinDefs::ENCODER_B[i].pin();
-                      return ids;
-                    }(),
-                .usePullUp = true}),
-        selection_(),
+        sampler_(pinSrc_,
+                 SamplerCfg{.pins = PinDefs::ENCODER, .usePullUp = true}),
         controller_(*ucfg_.pCfg, pinSrc_, ucfg_.tabBtns, *fb_, sampler_,
                     selection_,
-                    TrigBtnCfg{.pins = TrigPinsArray{PinDefs::TRIG_IN},
+                    TrigBtnCfg{.pins = PinDefs::TRIG_IN.toGroupArray(),
                                .activeLow = true,
                                .usePullUp = true,
                                .debounceTicks = 5}),
-        view_(selection_, pinSrc_,
-              ViewCfg{.ledPins_ = PinDefs::LEDS, .fps = 60, .pCfg = ucfg_.pCfg},
-              fb_),
+        view_(selection_, pinSrc_, ViewCfg{.fps = 60, .pCfg = ucfg_.pCfg}, fb_),
         filterParams_(&ucfg_.pCfg->filter) {
+    initSpecs();
+    controller_.seedFromCfg();
     initSpecs();
     controller_.seedFromCfg();
     // Move expander-backed buttons/LEDs to Controller; keep expander here

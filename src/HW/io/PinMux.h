@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "hw/io/Pin.h"
-#include "hw/io/Types.h"
 #include "util/BitSplit.h"
 
 namespace zlkm::hw::io {
@@ -57,12 +56,18 @@ class PinMux {
     // Accessors per spec
     constexpr PinId pin() const { return PinId{this->low}; }
     constexpr PinGroupId group() const { return PinGroupId{this->high}; }
+
+    constexpr GroupPinArray<1> toGroupArray() const {
+      return GroupPinArray<1>(group(), PinIdArray<1>{pin()});
+    }
   };
 
   using PinIdT = MuxPin;
 
   template <size_t N>
-  using PinIdArrayT = std::array<PinIdT, N>;
+  using PinIdArrayT = zlkm::hw::io::PinIdArray<N>;
+  template <size_t N>
+  using GroupPinArrayT = zlkm::hw::io::GroupPinArray<N>;
 
   explicit PinMux(Devices&... devs) : devs_(devs...) {}
 
@@ -77,16 +82,40 @@ class PinMux {
               [&](auto& d) { d.setPinMode((int)p.pin().value, m); });
   }
 
+  template <size_t K>
+  inline void setPinsMode(GroupPinArrayT<K> const& pins, PinMode m) {
+    dispatch_(pins.group().value, [&](auto& d) {
+      for (size_t i = 0; i < K; ++i) {
+        d.setPinMode(pins[i], m);
+      }
+    });
+  }
+
+  template <size_t K>
+  inline void writePins(GroupPinArrayT<K> const& pins, bool high) {
+    dispatch_(pins.group().value, [&](auto& d) {
+      for (size_t i = 0; i < K; ++i) {
+        d.writePin(pins[i], high);
+      }
+    });
+  }
+
   // Write a single pin
   inline void writePin(PinIdT p, bool high) const {
-    dispatch_(p.group().value,
-              [&](auto& d) { d.writePin((int)p.pin().value, high); });
+    return writeGroupPin(p.group(), p.pin(), high);
+  }
+
+  inline void writeGroupPin(PinGroupId group, PinId pin, bool high) const {
+    dispatch_(group.value, [&](auto& d) { d.writePin(pin, high); });
   }
 
   // Read a single pin
   inline bool readPin(PinIdT p) const {
-    return dispatch_(p.group().value,
-                     [&](auto& d) { return d.readPin((int)p.pin().value); });
+    return readGroupPin(p.group(), p.pin());
+  }
+
+  inline bool readGroupPin(PinGroupId group, PinId pin) const {
+    return dispatch_(group.value, [&](auto& d) { return d.readPin(pin); });
   }
 
   // Bulk read: if all pins are in the same group, use device's bulk read;
@@ -125,26 +154,10 @@ class PinMux {
                      [&](auto& d) { return d.template readPins<K>(pins); });
   }
 
-  // Bulk read two pin sets (A and B) for a specific device group in a single
-  // device transaction, by interleaving the read order as [A0, B0, A1, B1, ...]
-  // to minimize timing skew between corresponding A/B signals.
   template <size_t K>
-  inline std::pair<std::bitset<K>, std::bitset<K>> readGroupPinsInterleaved(
-      PinGroupId group, const std::array<PinId, K>& pinsA,
-      const std::array<PinId, K>& pinsB) const {
-    std::array<PinId, 2 * K> pins{};
-    for (size_t i = 0; i < K; ++i) {
-      pins[2 * i] = pinsA[i];
-      pins[2 * i + 1] = pinsB[i];
-    }
-    auto bits2 = dispatch_(group.value,
-                           [&](auto& d) { return d.template readPins<2 * K>(pins); });
-    std::bitset<K> outA, outB;
-    for (size_t i = 0; i < K; ++i) {
-      outA.set(i, bits2.test(2 * i));
-      outB.set(i, bits2.test(2 * i + 1));
-    }
-    return {outA, outB};
+  inline std::bitset<K> readGroupPins(const GroupPinArray<K>& pins) const {
+    return dispatch_(pins.group().value,
+                     [&](auto& d) { return d.template readPins<K>(pins); });
   }
 
  private:

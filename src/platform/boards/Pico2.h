@@ -30,6 +30,8 @@ struct PinDefs {
   using SrcPin = typename PinSource::PinIdT;
   using PinId = zlkm::hw::io::PinId;  // low-level raw pin id
   using PinGroupId = zlkm::hw::io::PinGroupId;
+  template <size_t N>
+  using GroupPinArray = zlkm::hw::io::GroupPinArray<N>;
 
   static constexpr PinGroupId GROUP_GPIO = PinGroupId{0};  // default group
   static constexpr PinGroupId GROUP_EXPANDER = PinGroupId{1};
@@ -51,35 +53,16 @@ struct PinDefs {
   inline static const SrcPin OLED_RST{8};   // RESET
 
   // MCP23017 expander pins (0..15)
-  inline static const SrcPinArray<4> LEDS{
-      SrcPin{0, GROUP_EXPANDER},
-      SrcPin{1, GROUP_EXPANDER},
-      SrcPin{2, GROUP_EXPANDER},
-      SrcPin{3, GROUP_EXPANDER},
-  };
-  inline static const SrcPinArray<4> TAB_BUTTONS{
-      SrcPin{4, GROUP_EXPANDER},
-      SrcPin{5, GROUP_EXPANDER},
-      SrcPin{6, GROUP_EXPANDER},
-      SrcPin{7, GROUP_EXPANDER},
-  };
-  inline static const SrcPinArray<4> ENCODER_A{
-      SrcPin{8, GROUP_EXPANDER},
-      SrcPin{10, GROUP_EXPANDER},
-      SrcPin{12, GROUP_EXPANDER},
-      SrcPin{14, GROUP_EXPANDER},
-  };
-  inline static const SrcPinArray<4> ENCODER_B{
-      SrcPin{9, GROUP_EXPANDER},
-      SrcPin{11, GROUP_EXPANDER},
-      SrcPin{13, GROUP_EXPANDER},
-      SrcPin{15, GROUP_EXPANDER},
-  };
+  inline static const GroupPinArray<4> LEDS{GROUP_EXPANDER, {0, 1, 2, 3}};
+  inline static const GroupPinArray<4> TAB_BUTTONS{GROUP_EXPANDER,
+                                                   {4, 5, 6, 7}};
+  inline static const GroupPinArray<8> ENCODER{GROUP_EXPANDER,
+                                               {8, 9, 10, 11, 12, 13, 14, 15}};
 };
 
 inline GpioPins& gpioPins() {
   using namespace zlkm::hw::io;
-  static GpioPins s_gpio(defaultPinSet<GPIO_PIN_COUNT>(), PinMode::Input);
+  static GpioPins s_gpio(PinMode::Input);
   return s_gpio;
 }
 

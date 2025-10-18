@@ -21,4 +21,29 @@ inline constexpr PinIdArray<N> defaultPinSet() {
   return pins;
 }
 
+template <size_t N>
+struct GroupPinArray : public PinIdArray<N> {
+  using Base = PinIdArray<N>;
+  GroupPinArray() = default;
+  GroupPinArray(PinGroupId group, Base pins) : Base(pins), group_(group) {}
+
+  GroupPinArray(PinGroupId group, std::array<PinId::ValueType, N> rawPins)
+      : GroupPinArray{group, toPinList(rawPins)} {}
+
+  constexpr PinGroupId group() const { return group_; }
+
+ private:
+  constexpr Base toPinList(std::array<PinId::ValueType, N> rawPins) {
+    Base pins{};
+    for (size_t i = 0; i < N; ++i) {
+      pins[i] = PinId{rawPins[i]};
+    }
+    return pins;
+  }
+
+  PinGroupId group_ = PinGroupId{0};
+};
+
+enum class PinMode : uint8_t { Input, InputPullUp, Output };
+
 }  // namespace zlkm::hw::io

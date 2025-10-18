@@ -3,7 +3,6 @@
 #include <bitset>
 
 #include "hw/io/Pin.h"
-#include "hw/io/Types.h"
 
 namespace zlkm::hw::io {
 
@@ -11,11 +10,10 @@ template <int N, typename PinGroupT>
 class ButtonManager {
  public:
   using Bits = std::bitset<N>;
-  using PinIdT = typename PinGroupT::PinIdT;
-  using PinArrayT = std::array<PinIdT, N>;
+  using GroupArrayT = zlkm::hw::io::GroupPinArray<N>;
 
   struct Cfg {
-    PinArrayT pins{};  // backend-native ids (native to PinGroupT)
+    GroupArrayT pins;  // backend-native ids (native to PinGroupT)
     bool activeLow = true;
     bool usePullUp = false;
     uint8_t debounceTicks = 5;  // consecutive equal samples to accept change
@@ -29,10 +27,10 @@ class ButtonManager {
   ButtonManager(PinGroupT& dev, const Cfg& cfg) : dev_(dev), cfg_(cfg) {
     const PinMode pm = (cfg_.activeLow && cfg_.usePullUp) ? PinMode::InputPullUp
                                                           : PinMode::Input;
-    for (int i = 0; i < N; ++i) dev_.setPinMode(cfg_.pins[i], pm);
+    dev_.setPinsMode(cfg_.pins, pm);
 
-    Bits now = dev_.readPins(cfg_.pins);  // 1 = HIGH
-    if (cfg_.activeLow) now = ~now;       // 1 = pressed
+    Bits now = dev_.readGroupPins(cfg_.pins);  // 1 = HIGH
+    if (cfg_.activeLow) now = ~now;            // 1 = pressed
     stable_ = prev_ = lastSample_ = now;
     cnt_.fill(0);
   }
@@ -44,8 +42,8 @@ class ButtonManager {
   };
 
   inline Report tick() {
-    Bits raw = dev_.readPins(cfg_.pins);  // 1 = HIGH
-    if (cfg_.activeLow) raw = ~raw;       // 1 = pressed
+    Bits raw = dev_.readGroupPins(cfg_.pins);  // 1 = HIGH
+    if (cfg_.activeLow) raw = ~raw;            // 1 = pressed
 
     Bits rising, falling;
     for (int i = 0; i < N; ++i) {

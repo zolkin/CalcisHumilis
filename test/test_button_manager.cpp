@@ -1,28 +1,15 @@
 #include <array>
 #include <bitset>
 
+#include "./FakePins.h"
 #include "hw/io/ButtonManager.h"
-#include "hw/io/Types.h"
 #include "platform/test.h"
 
 using namespace zlkm::hw::io;
 
 namespace button_tests {
 
-struct FakePins {
-  std::array<bool, 16> level{};  // index by raw pin id
-
-  void setPin(uint8_t id, bool high) { level[id] = high; }
-
-  void setPinMode(PinId /*id*/, PinMode /*m*/) {}
-
-  template <size_t K>
-  std::bitset<K> readPins(const std::array<PinId, K>& idxs) const {
-    std::bitset<K> out;
-    for (size_t i = 0; i < K; ++i) out.set(i, level[idxs[i].value]);
-    return out;
-  }
-};
+using namespace zlkm::test;
 
 void test_debounce_rising_after_threshold() {
   FakePins fp;
@@ -34,12 +21,12 @@ void test_debounce_rising_after_threshold() {
   cfg.debounceTicks = 3;   // require 3 stable samples
 
   // Idle high (not pressed)
-  fp.setPin(0, true);
+  fp.setPin(cfg.pins[0], true);
   BM bm(fp, cfg);
 
   // Noisy press: H L H L L L -> should only trigger once after 3 L's
   auto sample = [&](bool high) {
-    fp.setPin(0, high);
+    fp.setPin(cfg.pins[0], high);
     return bm.tick();
   };
 
@@ -68,11 +55,11 @@ void test_debounce_falling_after_threshold() {
   cfg.debounceTicks = 2;
 
   // Start pressed: wire LOW because activeLow=true
-  fp.setPin(1, false);
+  fp.setPin(cfg.pins[0], false);
   BM bm(fp, cfg);
 
   auto sample = [&](bool high) {
-    fp.setPin(1, high);
+    fp.setPin(cfg.pins[0], high);
     return bm.tick();
   };
 
