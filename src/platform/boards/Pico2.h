@@ -25,8 +25,9 @@ struct Board {
   using SrcPinId = typename PinSource::PinIdT;
   using PinId = zlkm::hw::io::PinId;  // low-level raw pin id
   using PinGroupId = zlkm::hw::io::PinGroupId;
+
   template <size_t N>
-  using GroupPinArray = zlkm::hw::io::GroupPinArray<N>;
+  using GroupPinArray = PinSource::GroupPinArrayT<N>;
 
   static constexpr PinGroupId GROUP_GPIO = PinGroupId{0};  // default group
   static constexpr PinGroupId GROUP_EXPANDER = PinGroupId{1};

@@ -61,16 +61,11 @@ class PinMux {
     explicit _MuxPin(RawPin pin) : Base(pin, 0) {}
     explicit _MuxPin(PinId pin) : Base(pin.value, 0) {}
 
+    constexpr operator PinId() const { return pin(); }
+    constexpr operator PinGroupId() const { return group(); }
+
     constexpr PinId pin() const { return PinId{this->low}; }
     constexpr PinGroupId group() const { return PinGroupId{this->high}; }
-
-    constexpr GroupPinArrayT<1> toGroupArray() const {
-      if constexpr (kSingleDevice) {
-        return GroupPinArrayT<1>{pin()};
-      } else {
-        return GroupPinArrayT<1>(group(), PinIdArrayT<1>{pin()});
-      }
-    }
   };
 
   using PinIdT = std::conditional_t<kSingleDevice, PinId, _MuxPin>;
@@ -96,8 +91,9 @@ class PinMux {
     });
   }
 
-  inline void writeGroupPin(PinGroupId group, PinId pin, bool high) const {
-    dispatch_(group.value, [&](auto& d) { d.writePin(pin, high); });
+  template <class PinGroup>
+  inline void writeGroupPin(const PinGroup& pins, int index, bool high) const {
+    dispatchPins_(pins, [&](auto& d) { d.writePin(pins[index], high); });
   }
 
   template <class PinGroup>

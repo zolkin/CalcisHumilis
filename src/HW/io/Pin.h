@@ -4,6 +4,7 @@
 
 #include <array>
 
+#include "util/BitSplit.h"
 #include "util/TaggedType.h"
 
 namespace zlkm::hw::io {
@@ -23,6 +24,11 @@ struct GroupPinArray : public PinIdArray<N> {
 
   GroupPinArray(PinGroupId group, std::array<PinId::ValueType, N> rawPins)
       : GroupPinArray{group, toPinList(rawPins)} {}
+
+  GroupPinArray(PinId pin) : Base({pin.value}), group_(0) {}
+
+  template <typename PinT>
+  GroupPinArray(PinT pin) : Base({pin.pin()}), group_{pin.group()} {}
 
   constexpr PinGroupId group() const { return group_; }
 
@@ -53,6 +59,13 @@ struct PinArraySizeHelper<PinIdArray<N>> {
 
 template <typename PinGroupT>
 static constexpr size_t PinArraySizeV = PinArraySizeHelper<PinGroupT>::value;
+
+PinId getPin(const PinId pin) { return pin; }
+
+template <typename PinT>
+PinId getPin(const PinT& pin) {
+  return pin.pin();
+}
 
 enum class PinMode : uint8_t { Input, InputPullUp, Output };
 

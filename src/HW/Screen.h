@@ -7,7 +7,7 @@
 
 namespace zlkm::hw {
 
-using CurrentBoard = typename ::zlkm::platform::boards::Current;
+using CurBoard = typename ::zlkm::platform::boards::Current;
 
 // Pick your controller at compile time:
 enum class ScreenController : uint8_t { SSD1306_128x64, SH1107_64x128 };
@@ -32,10 +32,10 @@ class Screen {
   using PinId = typename ::zlkm::hw::io::PinId;
 
   struct Cfg {
-    PinId pinSCK = CurrentBoard::OLED_SCK.pin();
-    PinId pinMOSI = CurrentBoard::OLED_MOSI.pin();
-    PinId pinDC = CurrentBoard::OLED_DC.pin();
-    PinId pinRST = CurrentBoard::OLED_RST.pin();
+    PinId pinSCK = CurBoard::OLED_SCK;
+    PinId pinMOSI = CurBoard::OLED_MOSI;
+    PinId pinDC = CurBoard::OLED_DC;
+    PinId pinRST = CurBoard::OLED_RST;
 
     // SPI & display
     uint32_t spiHz = 8'000'000;           // use u8g2.setBusClock()

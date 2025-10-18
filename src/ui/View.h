@@ -34,6 +34,10 @@ class View {
   using CalcisCfg = zlkm::ch::Calcis::Cfg;
   using Feedback = typename Calcis::Feedback;
 
+  static Pin::ValueType getPin(const Pin& pin) {
+    return zlkm::hw::io::getPin(pin).value;
+  }
+
   struct Cfg {
     uint32_t fps = 60;
     CalcisCfg* pCfg = nullptr;
@@ -46,8 +50,8 @@ class View {
         selection_(selection),
         cfg_(cfg),
         saver_(SaverCfg()),
-        triggerLED_(CurBoard::LED_TRIGGER.pin().value),
-        clippingLED_(CurBoard::LED_CLIPPING.pin().value),
+        triggerLED_(getPin(CurBoard::LED_TRIGGER)),
+        clippingLED_(getPin(CurBoard::LED_CLIPPING)),
         fb_(fb) {
     assert(cfg_.pCfg != nullptr && "View requires valid Calcis config");
 
@@ -139,7 +143,7 @@ class View {
     const uint8_t activeTab = selection_.currentTabIndex();
     for (uint8_t i = 0; i < 4; ++i) {
       const bool state = (i == activeTab);
-      pins().writeGroupPin(CurBoard::LEDS.group(), CurBoard::LEDS[i], state);
+      pins().writeGroupPin(CurBoard::LEDS, i, state);
     }
   }
 

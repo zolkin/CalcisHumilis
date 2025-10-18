@@ -50,7 +50,8 @@ class UI {
 
   using TabButtons = hw::io::ButtonManager<4, PinSource>;
   using Encoders = hw::io::QuadManagerIO<PinSource, kRotaryCount>;
-  using TrigBtnCfg = zlkm::hw::io::ButtonManager<1, PinSource>::Cfg;
+  using TrigButton = hw::io::ButtonManager<1, PinSource>;
+  using TrigBtnCfg = TrigButton::Cfg;
 
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
@@ -87,11 +88,12 @@ class UI {
         idleTimer_(ucfg_.screenIdleMs),
         sampler_(pins(),
                  SamplerCfg{.pins = CurBoard::ENCODER, .usePullUp = true}),
-        controller_(*ucfg_.pCfg, ucfg_.tabBtns, *fb_, sampler_, selection_,
-                    TrigBtnCfg{.pins = CurBoard::TRIG_IN.toGroupArray(),
-                               .activeLow = true,
-                               .usePullUp = true,
-                               .debounceTicks = 5}),
+        controller_(
+            *ucfg_.pCfg, ucfg_.tabBtns, *fb_, sampler_, selection_,
+            TrigBtnCfg{.pins = TrigButton::GroupArrayT{CurBoard::TRIG_IN},
+                       .activeLow = true,
+                       .usePullUp = true,
+                       .debounceTicks = 5}),
         view_(selection_, ViewCfg{.fps = 60, .pCfg = ucfg_.pCfg}, fb_),
         filterParams_(&ucfg_.pCfg->filter) {
     initSpecs();

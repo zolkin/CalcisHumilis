@@ -19,7 +19,8 @@ class QuadManagerIO {
   using PinGroupIdT = ::zlkm::hw::io::PinGroupId;  // explicit group id
 
   template <size_t M>
-  using GroupPinArray = zlkm::hw::io::GroupPinArray<M>;  // low-level pin ids
+  using GroupPinArray =
+      typename DeviceT::GroupPinArrayT<M>;  // low-level pin ids
 
   struct Cfg {
     GroupPinArray<N * 2> pins{};  // pins in order A0, B0, A1, B1 ..

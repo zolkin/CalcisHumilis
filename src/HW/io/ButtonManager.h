@@ -10,7 +10,7 @@ template <int N, typename PinGroupT>
 class ButtonManager {
  public:
   using Bits = std::bitset<N>;
-  using GroupArrayT = zlkm::hw::io::GroupPinArray<N>;
+  using GroupArrayT = typename PinGroupT::GroupPinArrayT<N>;
 
   struct Cfg {
     GroupArrayT pins;  // backend-native ids (native to PinGroupT)
