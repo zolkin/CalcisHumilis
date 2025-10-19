@@ -126,6 +126,8 @@ class UI {
     {
       auto& p0 = t0.pages[0];
       auto& cfg = *ucfg_.pCfg;
+      // Labels (const char*, no allocations)
+      p0.labels = {"PIT", "ADEC", "PDEC", "VOL"};
       p0.mappers[0] = ZLKM_UI_LIN_FMAPPER(cycles(65.f), cycles(260.f),
                                           &cfg.cyclesPerSample);
       p0.mappers[1] = ZLKM_UI_RATE_FMAPPER(20.f, 2000.f, CalcisTR::SR,
@@ -138,6 +140,7 @@ class UI {
     {
       auto& p1 = t0.pages[1];
       auto& sw = ucfg_.pCfg->swarmOsc;
+      p1.labels = {"PW", "MRPH", "DET", "SPRD"};
       p1.mappers[0] = ZLKM_UI_LIN_FMAPPER(0.01f, 0.99f, &sw.pulseWidth);
       p1.mappers[1] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &sw.morph);
       p1.mappers[2] = ZLKM_UI_LIN_FMAPPER(1.f, 1.05946f, &sw.detuneMul);
@@ -147,6 +150,7 @@ class UI {
     {
       auto& p2 = t0.pages[2];
       auto& sw = ucfg_.pCfg->swarmOsc;
+      p2.labels = {"UNI", "MMOD", "RPHS", ""};
       p2.mappers[0] = ZLKM_UI_INT_MAPPER(1.f, CH::MAX_SWARM_VOICES, &sw.voices);
       p2.mappers[1] = ZLKM_UI_INT_MAPPER(0.f, 1.f, &sw.morphMode);
       p2.mappers[2] = ZLKM_UI_BOOL_MAPPER(&sw.randomPhase);
@@ -159,6 +163,7 @@ class UI {
     {
       auto& p = t1.pages[0];
       using MyFilterMapper = ::zlkm::ui::FilterMapper<CalcisTR::SR>;
+      p.labels = {"RES", "CUT", "MRPH", "DRV"};
       p.mappers[0] = MyFilterMapper::makeResonance(filterParams_);
       p.mappers[1] = MyFilterMapper::makeCutoff(filterParams_);
       p.mappers[2] = MyFilterMapper::makeMorph(filterParams_);

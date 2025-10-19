@@ -11,9 +11,11 @@ namespace zlkm::ui {
 template <size_t ROTARY_COUNT_>
 struct ParameterPageT {
   static constexpr int ROTARY_COUNT = static_cast<int>(ROTARY_COUNT_);
-  zlkm::ui::InputMapper mappers[ROTARY_COUNT];
+  std::array<zlkm::ui::InputMapper, ROTARY_COUNT> mappers{};
   // Raw UI state for each rotary (0..4095)
-  int16_t rawPos[ROTARY_COUNT] = {0, 0, 0, 0};
+  std::array<int16_t, ROTARY_COUNT> rawPos{};
+  // Short parameter labels for each rotary (const char* string literals only)
+  std::array<const char*, ROTARY_COUNT> labels{};
 };
 
 template <size_t PAGE_COUNT_, size_t ROTARY_COUNT_>
@@ -21,7 +23,7 @@ struct ParameterTabT {
   static constexpr int PAGE_COUNT = static_cast<int>(PAGE_COUNT_);
   static constexpr int ROTARY_COUNT = static_cast<int>(ROTARY_COUNT_);
 
-  ParameterPageT<ROTARY_COUNT_> pages[PAGE_COUNT];
+  std::array<ParameterPageT<ROTARY_COUNT_>, PAGE_COUNT> pages{};
   uint8_t pageCount = 0;    // runtime active pages (<= PAGE_COUNT)
   uint8_t currentPage = 0;  // runtime selection (< pageCount)
 };

@@ -92,7 +92,7 @@ class View {
         const auto& t = selection_.tabAt(tabIdx);
         const auto& page = t.pages[pageIdx];
 
-        // Draw encoder rings in corners (bitmap atlas)
+        // Draw encoder rings in one row at the bottom (bitmap atlas)
         const int w = screen_.width();
         const int h = screen_.height();
         const int margin = 3;
@@ -104,35 +104,59 @@ class View {
           return static_cast<uint8_t>(v);
         };
         g.setBitmapMode(1);  // transparent
-        g.drawXBMP(margin, margin, rw, rh,
+        const int rings = 4;
+        const int ringY = h - margin - rh;
+        // Evenly distribute ring centers across full width
+        auto ring_x_at_index = [&](int i) -> int {
+          // Center position for ring i in [0..rings-1]
+          int cx = ((2 * i + 1) * w) / (2 * rings);
+          return cx - (rw / 2);
+        };
+        g.drawXBMP(ring_x_at_index(0), ringY, rw, rh,
                    ring16x16_frame(lvl(page.rawPos[0])));
-        g.drawXBMP(w - margin - rw, margin, rw, rh,
+        g.drawXBMP(ring_x_at_index(1), ringY, rw, rh,
                    ring16x16_frame(lvl(page.rawPos[1])));
-        g.drawXBMP(margin, h - margin - rh, rw, rh,
+        g.drawXBMP(ring_x_at_index(2), ringY, rw, rh,
                    ring16x16_frame(lvl(page.rawPos[2])));
-        g.drawXBMP(w - margin - rw, h - margin - rh, rw, rh,
+        g.drawXBMP(ring_x_at_index(3), ringY, rw, rh,
                    ring16x16_frame(lvl(page.rawPos[3])));
 
-        // Centered text and page info
+        // Text and page info, kept above the ring row
         g.setFont(u8g2_font_5x8_tf);
         const char* title = "CalcisHumilis";
-        int tw = g.getStrWidth(title);
-        int tx = (w - tw) / 2;
-        int ty = h / 2 - 2;
-        g.drawStr(tx, ty, title);
-
-        char buf[64];
+        std::array<char, 64> buf{};
         const uint8_t tabTotal = Selection::count();
         const uint8_t pageTotal = selection_.currentTabPageCount();
-        snprintf(buf, sizeof(buf), "Tab %u/%u", (unsigned)(tabIdx + 1),
-                 (unsigned)tabTotal);
-        int tabw = g.getStrWidth(buf);
-        g.drawStr((w - tabw) / 2, ty + 14, buf);
 
-        snprintf(buf, sizeof(buf), "Page %u/%u", (unsigned)(pageIdx + 1),
-                 (unsigned)pageTotal);
-        int pw = g.getStrWidth(buf);
-        g.drawStr((w - pw) / 2, ty + 28, buf);
+        // 1) Per-parameter short labels above each ring from selection pages
+        const auto& pageRef = t.pages[pageIdx];
+        const int yLabel = ringY - 2;  // baseline just above rings
+        for (int i = 0; i < rings; ++i) {
+          const char* label = pageRef.labels[i];
+          if (!label || label[0] == '\0') continue;
+          int cx = ((2 * i + 1) * w) / (2 * rings);
+          int lw = g.getStrWidth(label);
+          g.drawStr(cx - lw / 2, yLabel, label);
+        }
+
+        // 2) Single info row: "Tab x/y  Page x/y" above labels
+        int yInfo = yLabel - 10;  // one row above labels
+        snprintf(buf.data(), buf.size(), "Tab %u/%u  Page %u/%u",
+                 (unsigned)(tabIdx + 1), (unsigned)tabTotal,
+                 (unsigned)(pageIdx + 1), (unsigned)pageTotal);
+        int iw = g.getStrWidth(buf.data());
+        g.drawStr((w - iw) / 2, yInfo, buf.data());
+
+        // 3) Title at the top (if space permits)
+        int yTitle = yInfo - 12;
+        if (yTitle < 8) {
+          int delta = 8 - yTitle;
+          yTitle += delta;
+          yInfo += delta;
+          // yLabel stays relative to rings to preserve spacing
+        }
+        int tw = g.getStrWidth(title);
+        g.drawStr((w - tw) / 2, yTitle, title);
       });
     }
     tickLED_();
