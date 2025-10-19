@@ -5,6 +5,7 @@
 
 #include <tuple>
 
+#include "hw/ScreenTypes.h"
 #include "hw/io/GpioPins.h"
 #include "hw/io/McpPins.h"
 #include "hw/io/PinMux.h"
@@ -17,6 +18,9 @@ namespace zlkm::platform::boards::pico2 {
 
 // Concrete typedefs for readability
 struct Board {
+  using ScreenController = zlkm::hw::ScreenController;
+  inline static constexpr auto SCREEN_CTRL = ScreenController::SSD1306_128x64;
+
   static constexpr int GPIO_PIN_COUNT = 30;
   using GpioPins =
       zlkm::hw::io::GpioPins<GPIO_PIN_COUNT>;     // identity map 0..29 to GPIO
@@ -34,6 +38,10 @@ struct Board {
 
   template <size_t N>
   using SrcPinArray = std::array<SrcPinId, N>;
+
+  inline static const SrcPinId PIN_BCK{10};
+  inline static const SrcPinId PIN_LRCK{11};
+  inline static const SrcPinId PIN_DATA{12};
 
   // MCU GPIOs
   inline static const SrcPinId I2C_SDA{20};

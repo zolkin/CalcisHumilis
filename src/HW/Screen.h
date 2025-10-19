@@ -9,9 +9,6 @@ namespace zlkm::hw {
 
 using CurBoard = typename ::zlkm::platform::boards::Current;
 
-// Pick your controller at compile time:
-enum class ScreenController : uint8_t { SSD1306_128x64, SH1107_64x128 };
-
 // Map controller -> U8g2 driver type
 template <ScreenController C>
 struct U8g2Driver;
@@ -19,6 +16,11 @@ struct U8g2Driver;
 template <>
 struct U8g2Driver<ScreenController::SSD1306_128x64> {
   using type = U8G2_SSD1306_128X64_NONAME_F_4W_HW_SPI;
+};
+
+template <>
+struct U8g2Driver<ScreenController::SSD1309_128x64> {
+  using type = U8G2_SSD1309_128X64_NONAME2_F_4W_HW_SPI;
 };
 
 template <>

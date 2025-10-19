@@ -2,10 +2,9 @@
 #include <AudioTools.h>
 
 #include "AudioTraits.h"
+#include "platform/boards/Current.h"
 
 namespace zlkm::audio {
-// ---------- Hardware pins ---------- TODO: move to the Output.h
-constexpr uint8_t PIN_BCLK = 10, PIN_LRCK = 11, PIN_DATA = 12;
 
 template <class TR_, template <class> class AppT>
 class AudioCore {
@@ -13,18 +12,29 @@ class AudioCore {
   using TR = TR_;
   using App = AppT<TR>;
   using Cfg = typename App::Cfg;
+  using CurBoard = zlkm::platform::boards::Current;
+  using SrcPinId = typename CurBoard::SrcPinId;
   using Feedback = typename App::Feedback;
+
+  int getPin(SrcPinId pin) { return zlkm::hw::io::getPin(pin).value; }
 
   AudioCore(Cfg* cfg, Feedback* fb) : app_(cfg, fb) {
     // TODO: move device out of the core
     auto icfg = i2sOut_.defaultConfig(TX_MODE);
-    icfg.sample_rate = TR::SR;  // 96 kHz
-    icfg.channels = 2;          // stereo
-    icfg.bits_per_sample = 32;  // 32-bit words
-    icfg.pin_bck = PIN_BCLK;    // PCM5100 BCK
-    icfg.pin_ws = PIN_LRCK;     // PCM5100 LRCK
-    icfg.pin_data = PIN_DATA;   // PCM5100 DIN
-    i2sOut_.begin(icfg);
+    icfg.sample_rate = TR::SR;                   // 96 kHz
+    icfg.channels = 2;                           // stereo
+    icfg.bits_per_sample = 32;                   // 32-bit words
+    icfg.pin_bck = getPin(CurBoard::PIN_BCK);    // PCM510X BCK
+    icfg.pin_ws = getPin(CurBoard::PIN_LRCK);    // PCM510X LRCK
+    icfg.pin_data = getPin(CurBoard::PIN_DATA);  // PCM510X DIN
+    Log.notice(F("[I2S] BCK=%d WS=%d DATA=%d, %d Hz, %d-bit, ch=%d" CR),
+               icfg.pin_bck, icfg.pin_ws, icfg.pin_data, icfg.sample_rate,
+               icfg.bits_per_sample, icfg.channels);
+    bool ok = i2sOut_.begin(icfg);
+    if (!ok) {
+      Log.error(
+          F("[I2S] begin() failed; check pins, adjacency, and wiring" CR));
+    }
 
     // Prime audio
     queueNextBlockIfNeeded_();

@@ -13,6 +13,7 @@ What we already have
 Planned structure (minimize ifdefs)
 - Board profiles (compile-time):
   - [x] Add `src/platform/boards/pico2.h` with role-based constants (PinDefs) and a PinSource (PinMux of GpioPins + MCP expander).
+  - [x] Add `src/platform/boards/olimex_pico2xl.h` with GPIO-only PinSource and per-board pin roles.
   - [ ] Add `src/platform/boards/stm32h562.h` with equivalent PinDefs and PinSource (likely GPIO-only initially).
   - [x] Selector header: `src/platform/boards/Current.h` aliases the active board; make selection configurable via a build flag (e.g., `-DBOARD_STM32H562`), falling back to Pico 2 by default.
   - Optionally, keep a thin compatibility layer for legacy `pins.h` if needed (deprecated).
@@ -28,11 +29,13 @@ Planned structure (minimize ifdefs)
   - For optional LEDs/savers: introduce tiny types with the same interface so call sites remain compile-time polymorphic without scattering `#if`s.
 
 Acceptance / steps
-- [x] Create `src/platform/boards/pico2.h` with PinDefs and PinSource; add `boards/Current.h` selector and use it in modules.
-- [ ] Create `src/platform/boards/stm32h562.h` with equivalent PinDefs and PinSource.
-- [x] Update `UI.h`/`View.h`/`Screen.h` to use `boards::current::{PinSource, PinDefs}`; raw pins for third-party libs via `.pin()`.
-- [x] Smoke test on hardware (Pico 2): LEDs blink, buttons/encoders tick, U8g2 renders.
-- [ ] Smoke test on hardware (STM32H562): pending once board profile exists.
+ - [x] Create `src/platform/boards/pico2.h` with PinDefs and PinSource; add `boards/Current.h` selector and use it in modules.
+ - [x] Create `src/platform/boards/olimex_pico2xl.h` with GPIO-only PinSource and per-board pin roles.
+ - [ ] Create `src/platform/boards/stm32h562.h` with equivalent PinDefs and PinSource.
+ - [x] Update `UI.h`/`View.h`/`Screen.h` to use `boards::current::{PinSource, PinDefs}`; raw pins for third-party libs via `.pin()`.
+ - [x] Smoke test on hardware (Pico 2): LEDs blink, buttons/encoders tick, U8g2 renders.
+ - [x] Smoke test on hardware (Olimex Pico2‑XL): LEDs, buttons, encoders, I2S audio (PCM5100), SSD1309 screen.
+ - [ ] Smoke test on hardware (STM32H562): pending once board profile exists.
 
 ## 2) Streamline UI-changed parameter processing
 
