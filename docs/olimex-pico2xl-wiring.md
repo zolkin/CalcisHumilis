@@ -9,6 +9,17 @@ Reserved/avoid:
 
 The rest are considered available.
 
+## Navigation
+
+- [OLED (SPI, SSD1309 128x64)](#oled-spi-ssd1309-128x64)
+- [PCM5100 DAC (I2S audio output)](#pcm5100-dac-i2s-audio-output)
+- [PCM5102A DAC (I2S/IIS audio output)](#pcm5102a-dac-i2siis-audio-output)
+- [Trigger button and status LEDs](#trigger-button-and-status-leds)
+- [Front‑panel LEDs (tab/page indicators)](#frontpanel-leds-tabpage-indicators)
+- [Tab buttons (4)](#tab-buttons-4)
+- [Conflicts and ranges](#conflicts-and-ranges)
+- [Power and grounding](#power-and-grounding)
+
 ## OLED (SPI, SSD1309 128x64)
 
 Firmware mapping (SPI0):
@@ -70,6 +81,46 @@ Firmware configuration (set in board header):
 - PIN_DATA = 12
 
 These pins satisfy the RP2040 I2S requirement that WS (LRCK) is adjacent to BCK (either BCK+1 or BCK‑1). The pins are defined per-board and consumed by the audio core.
+
+## PCM5102A DAC (I2S/IIS audio output)
+
+The PCM5102A modules (e.g., Hiletgo/green boards) work great with the same 3‑wire I2S used above. No control bus is required.
+
+Core I2S connections (use the current board pins):
+- BCK → GPIO10
+- LRCK/WS → GPIO11
+- DIN/SD → GPIO12
+- MCLK/SCK: not required in the common I2S mode; leave unconnected
+- GND → GND, VIN → 5V (many modules accept 5V and regulate to 3.3V internally; check your PCB; if 3.3V‑only, use 3V3)
+
+Typical module side pins (names vary by vendor):
+- FMT (format select): tie to GND for standard I2S. Other settings select left‑justified modes.
+- XSMT (mute): tie HIGH (3V3) to enable outputs. Optionally wire to a spare GPIO for software mute/pop control.
+- FLT (filter): leave default (pulled low = “sharp” roll‑off). Pull HIGH for “slow/soft” roll‑off if preferred.
+- DEMP (de‑emphasis): leave default (off).
+- A3V3/3V3: on‑board analog 3.3V rail (provided by module regulator) — do not use as a supply.
+- AGND/GND: analog ground; ensure a solid ground reference to the board.
+
+Notes:
+- No I2C or SPI configuration is needed — the device auto‑configures from the I2S stream and FMT pin.
+- MCLK is optional on the PCM5102A; the module locks from BCK/LRCK with standard ratios used by the firmware.
+- The existing firmware pin assignment (BCK=10, LRCK=11, DATA=12) satisfies the RP2350 I2S GPIO adjacency rule for WS and BCK.
+
+Minimal wiring
+- The module works with only five connections: BCK, DIN, LRCK (WS), GND, and VIN. All other pins can remain unconnected.
+- If you’re reusing a 5‑pin header previously used for a PCM5100 module, you can keep the same five signals; no control pins are required.
+
+Solder bridges (H1L–H4L) on many PCM5102A boards
+- H1L: FLT — Filter select. Normal latency (Low) / Low latency (High)
+- H2L: DEMP — De‑emphasis for 44.1 kHz. Off (Low) / On (High)
+- H3L: XSMT — Soft‑mute. Soft mute (Low) / Soft un‑mute (High)
+- H4L: FMT — Audio format. I2S (Low) / Left‑justified (High)
+
+Recommended defaults (if you need to touch them):
+- FLT: Low (normal/sharp roll‑off), DEMP: Low (off), XSMT: High (un‑mute), FMT: Low (I2S)
+
+Caution on H/L polarity
+- Some boards label the H/L silk near a two‑pad solder bridge; the “left” pad may be High and the “right” pad Low (observed on one tested module). Verify the polarity for your PCB before changing bridges. If you encounter issues, set the bridges explicitly to FLT=Low, DEMP=Low, XSMT=High, FMT=Low and retest.
 
 ## Trigger button and status LEDs
 
