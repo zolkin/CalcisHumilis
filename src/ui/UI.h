@@ -56,7 +56,7 @@ class UI {
   struct Cfg {
     enum Tabs { TabSrc = 0, TabFilter, TabCount };
 
-    CH::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
+    mod::EnvCfg& env(int idx) { return pCfg->envs[idx]; }
 
     Cfg(const Cfg&) = delete;
     Cfg(Calcis::Cfg* pCfg_)
@@ -118,9 +118,11 @@ class UI {
   void initSpecs() {
     using PPage = ::zlkm::ui::ParameterPageT<kRotaryCount>;
     using namespace zlkm::ui;
+
+    static constexpr int SR = CalcisTR::SR;
     // Tab 0: Source
     auto& t0 = selection_.tabs[0];
-    t0.pageCount = 3;
+    t0.pageCount = 4;
     t0.currentPage = 0;
     // Page 0
     {
@@ -130,10 +132,10 @@ class UI {
       p0.labels = {"PIT", "ADEC", "PDEC", "VOL"};
       p0.mappers[0] = ZLKM_UI_LIN_FMAPPER(cycles(65.f), cycles(260.f),
                                           &cfg.cyclesPerSample);
-      p0.mappers[1] = ZLKM_UI_RATE_FMAPPER(20.f, 2000.f, CalcisTR::SR,
-                                           &cfg.envs[CH::EnvAmp].decay);
-      p0.mappers[2] = ZLKM_UI_RATE_FMAPPER(2.f, 80.f, CalcisTR::SR,
-                                           &cfg.envs[CH::EnvPitch].decay);
+      p0.mappers[1] =
+          ZLKM_UI_RATE_FMAPPER(20.f, 2000.f, SR, &cfg.envs[CH::EnvAmp].decay);
+      p0.mappers[2] =
+          ZLKM_UI_RATE_FMAPPER(2.f, 80.f, SR, &cfg.envs[CH::EnvPitch].decay);
       p0.mappers[3] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &cfg.outGain);
     }
     // Page 1
@@ -156,13 +158,25 @@ class UI {
       p2.mappers[2] = ZLKM_UI_BOOL_MAPPER(&sw.randomPhase);
     }
 
+    // Page 3: Amp Envelope (Attack/Decay/Depth/Curve)
+    {
+      auto& p3 = t0.pages[3];
+      auto& cfg = *ucfg_.pCfg;
+      p3.labels = {"ATK", "DEC", "DEP", "CURV"};
+      auto& envAmp = cfg.envs[CH::EnvAmp];
+      p3.mappers[0] = ZLKM_UI_RATE_FMAPPER(1.f, 1000.f, SR, &envAmp.attack);
+      p3.mappers[1] = ZLKM_UI_RATE_FMAPPER(20.f, 2000.f, SR, &envAmp.decay);
+      p3.mappers[2] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &envAmp.depth);
+      p3.mappers[3] = EnvCurveMapper::make(envAmp);
+    }
+
     // Tab 1: Filter
     auto& t1 = selection_.tabs[1];
     t1.pageCount = 1;
     t1.currentPage = 0;
     {
       auto& p = t1.pages[0];
-      using MyFilterMapper = ::zlkm::ui::FilterMapper<CalcisTR::SR>;
+      using MyFilterMapper = ::zlkm::ui::FilterMapper<SR>;
       p.labels = {"RES", "CUT", "MRPH", "DRV"};
       p.mappers[0] = MyFilterMapper::makeResonance(filterParams_);
       p.mappers[1] = MyFilterMapper::makeCutoff(filterParams_);

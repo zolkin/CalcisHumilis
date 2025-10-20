@@ -53,7 +53,7 @@ class CalcisHumilis {
   };
 
   using Envelopes = mod::ADEnvelopes<EnvCount>;
-  using EnvCfg = typename Envelopes::EnvCfg;
+  using EnvCfg = mod::EnvCfg;
 
   struct Cfg {
     OscMode oscMode = OscSwarm;
@@ -83,13 +83,13 @@ class CalcisHumilis {
     int saturationCounter = 0;
   };
 
-  explicit CalcisHumilis(const Cfg *cfg, Feedback *fb);
+  explicit CalcisHumilis(const Cfg* cfg, Feedback* fb);
 
   void trigger();
   void tickLED();
 
   // Fill an interleaved stereo block (nFrames = stereo frames)
-  void fillBlock(OutBuffer &destLR);
+  void fillBlock(OutBuffer& destLR);
 
  private:
   float softClip(float x);
@@ -98,8 +98,8 @@ class CalcisHumilis {
   static inline float pitchToHz(float pit) { return exp2f(pit); }
   static inline float semisToPitch(float s) { return s / 12.0f; }
 
-  const Cfg *cfg_;
-  Feedback *fb_;
+  const Cfg* cfg_;
+  Feedback* fb_;
 
   Envelopes envelopes_;
 

@@ -2,6 +2,7 @@
 #include <atomic>
 
 #include "platform/platform.h"
+#include "util/Profiler.h"
 #include "util/spin_lock.h"
 
 namespace zlkm::app {
@@ -59,21 +60,25 @@ class MainApp {
   }
 
   void snapAudioCfg() {
+    ZLKM_PERF_SCOPE("MainApp::snapAudioCfg");
     util::sl_guard guard{cfgSL_};
     audioCfg_ = sharedCfg_;
   }
 
   void publishAudioCfg() {
+    ZLKM_PERF_SCOPE("MainApp::publishAudioCfg");
     util::sl_guard guard{cfgSL_};
     sharedCfg_ = uiAudioCfg_;
   }
 
   void publishUIFeedback() {
+    ZLKM_PERF_SCOPE("MainApp::publishUIFeedback");
     util::sl_guard guard{fbSL_};
     sharedFb_ = audioUiFb_;
   }
 
   void snapUIFeedback() {
+    ZLKM_PERF_SCOPE("MainApp::snapUIFeedback");
     util::sl_guard guard{fbSL_};
     uiFb_ = sharedFb_;
   }

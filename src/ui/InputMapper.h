@@ -5,6 +5,7 @@
 
 #include "audio/DJFilter.h"
 #include "dsp/Util.h"
+#include "mod/ADEnvelopes.h"
 
 namespace zlkm::ui {
 
@@ -263,6 +264,24 @@ struct FilterMapper {
   }
 };
 
+// Envelope input mapper: maps UI controls to EnvCfg fields
+struct EnvCurveMapper {
+  using IM = InputMapper;
+  // Curve [0..1]: interpolate cLin,cSquare across Log(2,-1)->Lin(1,0)->Exp(0,1)
+  static IM make(mod::EnvCfg& e) {
+    using namespace zlkm::mod;
+    return IM(
+        [](int16_t raw, IM::ValueToSetRaw p) {
+          auto* curve = reinterpret_cast<ExpLinCurve*>(p);
+          curve->setCurve01(float(raw) / float(IM::kMaxRawValue));
+        },
+        [](IM::ValueToSetRaw p) {
+          auto* curve = reinterpret_cast<ExpLinCurve*>(p);
+          return int16_t((curve->getShape() * float(IM::kMaxRawValue)));
+        },
+        &e.curve);
+  }
+};
 }  // namespace zlkm::ui
 
 // Helper macros to define limit and exponent structs for mappers

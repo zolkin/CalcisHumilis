@@ -4,7 +4,6 @@
 // Include this instead of <Arduino.h> or Pico headers directly.
 
 // Timing helpers (millis/micros) are defined for non-Arduino builds below.
-
 #if defined(ARDUINO)
 
 #include <Arduino.h>
