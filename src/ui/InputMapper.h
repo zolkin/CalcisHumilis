@@ -272,11 +272,11 @@ struct EnvCurveMapper {
     using namespace zlkm::mod;
     return IM(
         [](int16_t raw, IM::ValueToSetRaw p) {
-          auto* curve = reinterpret_cast<ExpLinCurve*>(p);
+          auto* curve = reinterpret_cast<EnvCurve*>(p);
           curve->setCurve01(float(raw) / float(IM::kMaxRawValue));
         },
         [](IM::ValueToSetRaw p) {
-          auto* curve = reinterpret_cast<ExpLinCurve*>(p);
+          auto* curve = reinterpret_cast<EnvCurve*>(p);
           return int16_t((curve->getShape() * float(IM::kMaxRawValue)));
         },
         &e.curve);

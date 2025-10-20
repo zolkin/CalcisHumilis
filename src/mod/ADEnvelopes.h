@@ -5,9 +5,9 @@
 
 namespace zlkm::mod {
 
-struct ExpLinCurve {
-  ExpLinCurve() = default;
-  ExpLinCurve(float curve) { setCurve01(curve); }
+struct EnvCurve {
+  EnvCurve() = default;
+  EnvCurve(float curve) { setCurve01(curve); }
 
   void setCurve01(float curve) {
     if (curve <= 0.0f) {
@@ -38,10 +38,10 @@ struct ExpLinCurve {
 };
 
 struct EnvCfg {
-  float attack = 1.0f;      // SR-normalized coeff
-  float decay = 1.0f;       // SR-normalized coeff
-  float depth = 1.0f;       // output scaling
-  ExpLinCurve curve{0.5f};  // lin by deault
+  float attack = 1.0f;   // SR-normalized coeff
+  float decay = 1.0f;    // SR-normalized coeff
+  float depth = 1.0f;    // output scaling
+  EnvCurve curve{0.5f};  // lin by deault
 };
 
 template <int N>
@@ -60,7 +60,7 @@ class ADEnvelopes {
     values_.fill(0.0f);
     states_.fill(State::Idle);
     env_.fill(EnvCfg{});
-    shaped_.fill(0.0f);
+    curved_.fill(0.0f);
   }
 
   // ------ configuration (no sanitization) ------
@@ -115,7 +115,7 @@ class ADEnvelopes {
             y = 1.0f;
             states_[i] = State::Decay;
           }
-          shaped_[i] = env_[i].curve.computeAttack(y);
+          curved_[i] = env_[i].curve.computeAttack(y);
         } break;
 
         case State::Decay: {
@@ -125,7 +125,7 @@ class ADEnvelopes {
             y = 0.0f;
             states_[i] = State::Idle;
           }
-          shaped_[i] = env_[i].curve.computeDecay(y);
+          curved_[i] = env_[i].curve.computeDecay(y);
         } break;
       }
       // internal safety clamp; remove if you prefer raw math
@@ -134,7 +134,7 @@ class ADEnvelopes {
   }
 
   // ------ queries / maintenance ------
-  float value(int i) const { return shaped_[i] * env_[i].depth; }
+  float value(int i) const { return curved_[i] * env_[i].depth; }
   float valueRaw(int i) const { return values_[i]; }  // pre-depth 0..1
   bool isActive(int i) const { return states_[i] != State::Idle; }
 
@@ -153,7 +153,7 @@ class ADEnvelopes {
   std::array<EnvCfg, N> env_;
   std::array<float, N> values_;
   std::array<State, N> states_;
-  std::array<float, N> shaped_;
+  std::array<float, N> curved_;
 };
 
 }  // namespace zlkm::mod
