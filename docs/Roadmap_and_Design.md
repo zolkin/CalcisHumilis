@@ -43,21 +43,54 @@ Decision: Keep the simple "snap full config per audio buffer" approach for now. 
 
 Note: If this becomes a bottleneck, revisit an event-driven param change queue and per-param interpolation.
 
-## 3) Log/exp envelopes
+## ~~3) Log/exp envelopes~~
 
-Goal: Add logarithmic/exponential envelope curves (alongside linear) for more natural dynamics.
+Status: Implemented.
 
-Plan
-- Expose a per-envelope curve selector (lin/log/exp) or a compact curve parameter that maps to these shapes.
-- Implement curve shaping inside `mod::ADEnvelopes` with fast, branch-light math (e.g., pow-based or lookup with minimal memory).
-- Ensure reverse mapping for UI mappers remains intuitive.
+- Added compact curve parameter with inexpensive shaping in `mod::ADEnvelopes`:
+  - `EnvCurve` with `setCurve01(float)` producing attack/decay polynomials
+  - Branch-light per-sample shaping cached as `curved_` and read via `value(i)`
+- Config/plumbing:
+  - `Calcis::Cfg::envs` includes the curve via `EnvCfg{ attack, decay, depth, EnvCurve }`
+  - UI mapping available via `EnvCurveMapper::make(...)` (0..1 → curve)
+- Verified via native tests and profile builds; processing time unchanged.
+
+## 4) Modulation Matrix (routing) and Map Mode UI
+
+Goal: Flexible, static modulation routing between modulators (envelopes now, CV/LFO later) and destination parameters.
+
+Scope
+- ModMatrix core (static, no dynamic allocations):
+  - Route: { sourceId, paramId, depth, bipolar flag, enabled }
+  - Fixed-capacity array (e.g., 16–24 routes); per-parameter indices for fast lookup
+  - Source values from `ADEnvelopes::value(i)` (unipolar 0..1), later CV/LFO
+- Parameter transforms (per-destination):
+  - Amp/Morph: linear add with clamp [0..1]
+  - Pitch: semitone-domain add then convert to Hz
+  - Cutoff: log2-domain add (octaves) then convert
+- Integration points:
+  - Apply routes per-sample for time-critical params (amp, pitch, cutoff)
+  - Use existing BlockInterpolator for smoothing modulated outputs when needed
+
+Visual Map Mode (UI)
+- Activate Map Mode via dedicated button. Flow:
+  1) Enter Map Mode
+  2) Select parameter page normally
+  3) Press a modulator button (e.g., Env A) to pick source
+  4) Turn a parameter’s knob to set route depth (creates route if missing)
+- Rings show modulation depth when in Map Mode; press knob to clear a route.
 
 Acceptance / steps
-- [ ] Add curve parameter(s) to `Calcis::Cfg::envs` and propagate into `ADEnvelopes`.
-- [ ] Implement log/exp shaping and validate with a simple native test (rise/decay profiles).
-- [ ] Add a minimal UI control to switch curves (or reuse existing controls temporarily).
+- [ ] Add `ModMatrix` core (header-only) with enums for sources/params and per-destination apply functions
+- [ ] Integrate into audio loop near where envelopes are consumed; keep route count small
+- [ ] UI: add Map Mode state, source selection via page buttons, ring rendering for depths
+- [ ] Minimal persistence of routes in config
 
-## 4) Consolidate parameter pages
+References
+- `src/mod/ADEnvelopes.h` (source values), `src/CalcisHumilis_impl.hh` (integration site)
+- `src/ui/UI.h` (pages/buttons), `src/ui/Controller.h` (knob handling), `src/ui/View.h` (rings)
+
+## 5) Consolidate parameter pages
 
 Goal: Pages users understand quickly: source, filter, modulation, FX (optional).
 
@@ -76,7 +109,7 @@ Acceptance / steps
 - [ ] Update `initSpecs()` to group parameters per above.
 - [ ] Add TODO markers for engine-based conditional pages.
 
-## 5) Per-parameter widgets in UI
+## 6) Per-parameter widgets in UI
 
 Goal: Draw meaningful widgets for the selected parameter(s).
 
@@ -94,7 +127,7 @@ Acceptance / steps
 - [ ] Add widget helpers to `View.h` and call them when not idle.
 - [ ] Optional scope screensaver under feature flag.
 
-## 6) New sound engines
+## 7) New sound engines
 
 Goal: Add FM next, then experimental stereo-bounce.
 
@@ -116,7 +149,7 @@ Acceptance / steps
 - [ ] Introduce `audio/engines/FM.h` with a tiny render() integrating into the existing audio loop.
 - [ ] Populate UI pages conditionally based on active engine.
 
-## 7) Voltage control (Plaits-style)
+## 8) Voltage control (Plaits-style)
 
 Hardware
 - Normalization probe: one probe GPIO fanned out through ~10 kΩ per-channel resistors into the CV input nodes, with a diode-based bias/clamp network (as seen in Plaits). This biasing creates a detectable signature on unpatched inputs without requiring switch jacks.
@@ -155,7 +188,7 @@ Acceptance / steps
 - [ ] Add a native test for Voct mapping: two-point calibration → expected semitone mapping and octave linearity.
 - [ ] Wire one CvReader channel to update `cfg.cyclesPerSample` via `Calcis::cycles(f)`.
 
-## 8) Other Hardware platforms to support
+## 9) Other Hardware platforms to support
 
 Goal: Expand beyond RP2350 variants; start with WeAct STM32H562.
 
@@ -163,7 +196,7 @@ Acceptance / steps
 - [ ] Create `src/platform/boards/stm32h562.h` with equivalent PinDefs and PinSource (likely GPIO-only initially).
 - [ ] Smoke test on hardware (STM32H562) once the board profile exists.
 
-## 9) Ideas / experiments
+## 10) Ideas / experiments
 
 - Filters: add LP/HP variants and separate Drive into FX; explore self-oscillation paths.
 - Input mapping gestures: long-turn acceleration, push-and-turn modes, tab-modifier keys.
@@ -185,7 +218,8 @@ Acceptance / steps
 ---
 
 ## References (by file)
-- `src/platform/pins.h`: current central pins used across UI and Screen.
+- `src/platform/boards/Current.h`: active board selector used across UI and Screen.
+- `src/platform/boards/pico2.h`, `src/platform/boards/olimex_pico2xl.h`: board pin roles and PinSource.
 - `src/platform/platform.h`: millis/micros shims.
 - `src/ui/UI.h`: pin usage, initSpecs() page definitions, component wiring.
 - `src/ui/View.h`: tab LEDs, ring UI, screensavers, and LED animations.
