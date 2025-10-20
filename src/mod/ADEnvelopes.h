@@ -22,7 +22,7 @@ struct EnvCurve {
     }
   }
 
-  float getShape() const {
+  float getCurve01() const {
     if (lin + square == 0.0f) return 0.0f;
     return square / (lin + square);
   }

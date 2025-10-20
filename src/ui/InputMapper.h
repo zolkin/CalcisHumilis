@@ -277,7 +277,7 @@ struct EnvCurveMapper {
         },
         [](IM::ValueToSetRaw p) {
           auto* curve = reinterpret_cast<EnvCurve*>(p);
-          return int16_t((curve->getShape() * float(IM::kMaxRawValue)));
+          return int16_t((curve->getCurve01() * float(IM::kMaxRawValue)));
         },
         &e.curve);
   }
