@@ -90,6 +90,40 @@ References
 - `src/mod/ADEnvelopes.h` (source values), `src/CalcisHumilis_impl.hh` (integration site)
 - `src/ui/UI.h` (pages/buttons), `src/ui/Controller.h` (knob handling), `src/ui/View.h` (rings)
 
+## 4a) Unified parameter handling and per-sample modulation (policy)
+
+Goal: Make every parameter modulatable per-sample (FM-friendly), while keeping the filter path simple, safe, and performant. Unify UI and audio-loop handling via a single source of truth for parameter ranges and mappings.
+
+What we’ll standardize
+- Single ParamSpec registry (one header) as the ground truth for parameters:
+  - 0..1 normalized domain, min/max, toDomain() / fromDomain() for UI and DSP.
+  - Pitch-like params (osc freq, filter cutoff) map in octaves (exponential). Q uses a perceptual power curve. Morph stays linear 0..1.
+  - This registry is used by UI mappers, Mod Matrix, and DSP config, so semantics are identical everywhere.
+
+Per-sample modulation strategy (hybrid)
+- Exact-on-boundary, delta-in-between:
+  - At block/micro-block boundaries, compute exact targets (e.g., g = tan(pi*f/SR), k = 2/Q).
+  - Within the block, update per-sample using derivatives for speed and FM-style behavior:
+    - g += (pi/SR) * (1 + g*g) * df; k = 2/Q (or dk = −2/Q^2 * dQ if using deltas).
+  - On large stepped jumps (e.g., quantized CV), re-seed g from exact tan() on that frame; no extra “dezipper” unless artifacts are audible.
+
+Clipping/limiting and safety
+- No soft clipping inside the signal path except the final output stage; use hard clamps at most inside mapping code.
+- TPT SVF core remains; mild integrator leak stays. Optional state soft-saturation is available if needed for worst-case modulation, but default is to keep the core linear and rely on the final limiter.
+
+Parameter definition layout
+- Move all parameter specs to a single header (e.g., `src/app/params/Spec.h`), and reference them from UI pages (grouping happens elsewhere). This keeps mapping rules centralized and reusable.
+
+Dezippering and bandwidth policy
+- No dezippering unless we hear artifacts. One tanf per pitch-like parameter at micro-block boundaries is acceptable.
+- No bandwidth limiting for cutoff by default; reserve BLEP/BLAMP or other bandlimits for oscillators or sharp edges (e.g., square).
+
+Acceptance / steps
+- [ ] Add ParamSpec registry header with 0..1 ↔ domain functions per parameter (Hz, Q, morph, amp, pitch, etc.).
+- [ ] Use ParamSpec in Mod Matrix apply functions and in UI mappers so both share identical transforms.
+- [ ] Implement hybrid update: exact target recompute at block/micro-block boundaries; derivative deltas per sample; re-seed exact tan() on large steps.
+- [ ] Keep final output limiter only; avoid intermediate soft clips; evaluate state soft-sat only if instability or harsh artifacts are observed under extreme modulation.
+
 ## 5) Consolidate parameter pages
 
 Goal: Pages users understand quickly: source, filter, modulation, FX (optional).

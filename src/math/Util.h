@@ -20,16 +20,10 @@ static inline float rand01() {
 }
 
 // Clamp to [0,1]
-static inline float clamp01(float x) {
-  if (x > 1.0f) return 1.0f;
-  if (x < 0.0f) return 0.0f;
-  return x;
-}
+static inline float clamp01(float x) { return clamp(x, 0.0f, 1.0f); }
 
 inline float smoothstep(float a, float b, float x) {
-  float t = (x - a) / (b - a);
-  if (t < 0.f) t = 0.f;
-  if (t > 1.f) t = 1.f;
+  float t = clamp01((x - a) / (b - a));
   return t * t * (3.f - 2.f * t);
 }
 
