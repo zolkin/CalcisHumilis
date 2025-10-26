@@ -17,11 +17,11 @@ float CalcisHumilis<TR>::softClip(float x) {
 }
 
 template <class TR>
-CalcisHumilis<TR>::CalcisHumilis(const Cfg *cfg, Feedback *fb)
+CalcisHumilis<TR>::CalcisHumilis(const Cfg* cfg, Feedback* fb)
     : cfg_(cfg),
       fb_(fb),
       outGain_(cfg_->outGain),
-      cyclesPerSample_(cfg_->cyclesPerSample),
+      // cyclesPerSample_(cfg_->cyclesPerSample),
       swarm(cfg->swarmOsc) {}
 
 template <class TR>
@@ -31,8 +31,8 @@ void CalcisHumilis<TR>::trigger() {
 }
 
 template <size_t N>
-static inline void array_float_to_int32(const std::array<float, N> &src,
-                                        std::array<int32_t, N> &dst) {
+static inline void array_float_to_int32(const std::array<float, N>& src,
+                                        std::array<int32_t, N>& dst) {
   for (size_t i = 0; i < N; ++i) {
     float x = src[i] * 2147483647.0f;
     x = fmaxf(-2147483648.0f, fminf(2147483647.0f, x));
@@ -41,7 +41,7 @@ static inline void array_float_to_int32(const std::array<float, N> &src,
 }
 
 template <class TR>
-void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
+void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
   ZLKM_PERF_SCOPE("CalcisHumilis<TR>::fillBlock");
 
   using namespace zlkm::mod;
@@ -55,8 +55,8 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
   auto swarmCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
       swarm.cfg().i_begin(), cfg_->swarmOsc.asTarget());
 
-  auto calcisCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES, 2>(
-      &outGain_, {cfg_->outGain, cfg_->cyclesPerSample});
+  auto calcisCfgItp =
+      makeBlockInterpolator<TR::BLOCK_FRAMES, 1>(&outGain_, {cfg_->outGain});
 
   auto filterCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
       &fCfg_.gCut, cfg_->filter.asTarget());
@@ -93,11 +93,18 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer &destLR) {
     const float m = envelopes_.value(EnvMorph);
     const float f = envelopes_.value(EnvFilter);
 
-    float &l = buffer[2 * i + 0];
-    float &r = buffer[2 * i + 1];
+    float& l = buffer[2 * i + 0];
+    float& r = buffer[2 * i + 1];
     l = r = 0.f;
 
-    swarm.tickStereo(cyclesPerSample_ * (1.f + p), sw, m, l, r);
+    // TODO: manual modulation move to matrix later
+    swarm.mod().cyclesPerSample = p * cyclesPerSample_;
+    swarm.mod().detuneMul = math::interpolate(1.f, swarm.cfg().detuneMul, sw);
+    swarm.mod().stereoSpread = sw;
+    swarm.mod().morph = m;
+    swarm.mod().pulseWidth = m;
+
+    swarm.tickStereo(l, r);
 
     {
       ZLKM_PERF_SCOPE_SAMPLED("filter", 6);

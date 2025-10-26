@@ -2,7 +2,7 @@
 
 #include <array>
 
-#include "ui/InputMapper.h"
+#include "mod/Parameters.h"
 #include "ui/UiTypes.h"
 
 namespace zlkm::ui {
@@ -11,7 +11,7 @@ namespace zlkm::ui {
 template <size_t ROTARY_COUNT_>
 struct ParameterPageT {
   static constexpr int ROTARY_COUNT = static_cast<int>(ROTARY_COUNT_);
-  std::array<zlkm::ui::InputMapper, ROTARY_COUNT> mappers{};
+  std::array<zlkm::mod::ParamInputMapper, ROTARY_COUNT> mappers{};
   // Raw UI state for each rotary (0..4095)
   std::array<int16_t, ROTARY_COUNT> rawPos{};
   // Short parameter labels for each rotary (const char* string literals only)

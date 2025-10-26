@@ -1,9 +1,9 @@
 #include "platform/test.h"
 // Needs to come first
 
-#include "ui/InputMapper.h"
+#include "mod/Parameters.h"
 
-using namespace zlkm::ui;
+using namespace zlkm::mod;
 
 namespace mappers_tests {
 struct LinLim {
@@ -32,18 +32,6 @@ void test_linear_roundtrip() {
   }
 }
 
-void test_exp_roundtrip() {
-  float v = 0.0f;
-  auto im = ExpPowMapper<float, LinLim, ExpPol>::make(&v);
-  // Avoid raw values that collapse to 0 after pow(x, EXP) then sticky-ends.
-  // For EXP=2.0, threshold ~ sqrt(0.05) * 4095 ≈ 916.
-  for (int raw : {0, 1024, 2048, 3072, 4095}) {
-    im.mapAndSet(raw);
-    int back = im.reverseMap();
-    TEST_ASSERT_INT_WITHIN(48, raw, back);
-  }
-}
-
 void test_db_mapper() {
   float amp = 0.0f;
   struct DbLim {
@@ -53,7 +41,7 @@ void test_db_mapper() {
   auto im = DbMapper<DbLim>::make(&amp);
   im.mapAndSet(0);
   TEST_ASSERT_FLOAT_WITHIN(1e-5f, powf(10.f, -60.f * 0.05f), amp);
-  im.mapAndSet(InputMapper::kMaxRawValue);
+  im.mapAndSet(ParamInputMapper::kMaxRawValue);
   TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.f, amp);
 }
 
@@ -72,12 +60,12 @@ void test_int_mapper() {
   auto im = IntMapper<IntLim>::make(&i);
   im.mapAndSet(0);
   TEST_ASSERT_EQUAL(0, i);
-  im.mapAndSet(InputMapper::kMaxRawValue);
+  im.mapAndSet(ParamInputMapper::kMaxRawValue);
   TEST_ASSERT_EQUAL(10, i);
   im.mapAndSet(2048);
   TEST_ASSERT(i >= 5 && i <= 6);
   int back = im.reverseMap();
-  TEST_ASSERT(back >= 0 && back <= InputMapper::kMaxRawValue);
+  TEST_ASSERT(back >= 0 && back <= ParamInputMapper::kMaxRawValue);
 }
 
 void test_bool_mapper() {
@@ -88,7 +76,7 @@ void test_bool_mapper() {
   auto im = BoolMapper<Thr>::make(&b);
   im.mapAndSet(0);
   TEST_ASSERT_FALSE(b);
-  im.mapAndSet(InputMapper::kMaxRawValue);
+  im.mapAndSet(ParamInputMapper::kMaxRawValue);
   TEST_ASSERT_TRUE(b);
 }
 

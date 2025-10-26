@@ -16,13 +16,13 @@ class SwarmMorph {
  public:
   struct Cfg {
     // Some dirty tricks here!!
-    static constexpr int INTERPOLATABLE_PARAMS = 5;
-    float* i_begin() { return &detuneMul; }
+    static constexpr int INTERPOLATABLE_PARAMS = 6;
+    float* i_begin() { return &cyclesPerSample; }
     std::array<float, INTERPOLATABLE_PARAMS> const& asTarget() const {
       return *reinterpret_cast<std::array<float, INTERPOLATABLE_PARAMS> const*>(
-          &detuneMul);
+          &cyclesPerSample);
     }
-
+    float cyclesPerSample = 200.0f / float(SR);  // base frequency
     float detuneMul = 1.2599f;  // spread per ring (p+-p*c, p+-2*p*c…)
     float stereoSpread = 0.6f;  // 0..1 width
     float gainBase = 0.6f;      // center weight: base^ring
@@ -33,6 +33,14 @@ class SwarmMorph {
     int voices = 7;        // 1..N
     int morphMode;         // 0 -> Morph, 1 -> Switch between waveforms (debug)
     bool randomPhase = 1;  // randomize start phase, int
+  };
+
+  struct Mod {
+    float cyclesPerSample = 0.f;  // base frequency
+    float detuneMul = 0.f;        // multiply detune
+    float stereoSpread = 0.f;     // add to 0..1
+    float morph = 0.f;            // add to morph
+    float pulseWidth = 0.f;       // add to duty cycle
   };
 
   explicit SwarmMorph(const Cfg& c) : cfg_(c) { cfgUpdated(); }
@@ -46,42 +54,42 @@ class SwarmMorph {
   void reset() {
     const int VN = cfg_.voices;
     seedDetune(VN);
-    seedPan(VN);
+    seedPanRing(VN);
     seedGains(VN);
     osc_.reset(cfg_.randomPhase);
   }
 
-  inline void tickStereo(const float cyclesPerSample, const float swarmEnv,
-                         const float morphEnv, float& outL, float& outR) {
+  // const float cyclesPerSample, const float swarmEnv,
+  // const float morphEnv,
+  inline void tickStereo(float& outL, float& outR) {
     ZLKM_PERF_SCOPE_SAMPLED("Swarm::tickStereo", 6);
     const int VN = cfg_.voices;
-    const float c0 = cyclesPerSample;
+    const float c0 = cfg_.cyclesPerSample + mod_.cyclesPerSample;
     osc_.mode = (typename MorphOsc::Mode)cfg_.morphMode;
+    std::array<float, N> oscOut{};
 
     {
       ZLKM_PERF_SCOPE_SAMPLED("detune", 6);
       for (int i = 0; i < VN; ++i) {
-        osc_.state[i].cyclesPerSample =
-            c0 * detuneMul_[i] *
-            math::interpolate(1.f, detuneMul_[i], swarmEnv);
-        osc_.state[i].morph = cfg_.morph + (1.f - cfg_.morph) * morphEnv;
+        osc_.state[i].cyclesPerSample = c0 * detuneMul_[i] * mod_.detuneMul;
+        osc_.state[i].morph = math::clamp01(cfg_.morph + mod_.morph);
       }
     }
 
     {
       ZLKM_PERF_SCOPE_SAMPLED("oscillators", 6);
-      osc_.tick(tmp_);
+      osc_.tick(oscOut);
     }
 
     {
       ZLKM_PERF_SCOPE_SAMPLED("panning", 6);
       float L = 0.f, R = 0.f;
-      // per sample (or control-rate), e in [0..1]
-      const float kEqualPan = 0.70710678f;  // 1/sqrt(2)
+
+      updatePan(VN);
+
       for (int i = 0; i < VN; ++i) {
-        const float v = gains_[i] * tmp_[i];
-        L += v * math::interpolate(kEqualPan, panL_[i], swarmEnv);
-        R += v * math::interpolate(kEqualPan, panR_[i], swarmEnv);
+        L += gains_[i] * oscOut[i] * panL_[i];
+        R += gains_[i] * oscOut[i] * panR_[i];
       }
 
       outL = L;
@@ -90,6 +98,7 @@ class SwarmMorph {
   }
 
   Cfg& cfg() { return cfg_; }
+  Mod& mod() { return mod_; }
 
  private:
   // ---------------- helpers ----------------
@@ -118,7 +127,7 @@ class SwarmMorph {
     return (i & 1) ? -k : +k;
   }
 
-  void seedPan(int VN) {
+  void seedPanRing(int VN) {
     if (VN == 1) {
       panL_[0] = panR_[0] = 0.f;
       return;
@@ -127,8 +136,15 @@ class SwarmMorph {
     const float fInvMaxRing = 1.f / float(maxRing);
     for (int i = 0; i < VN; ++i) {
       const int ring = ringIndexFor(i, VN);
-      float pNorm = maxRing ? float(ring) * fInvMaxRing : 0.f;
-      const float p = math::clamp(pNorm * cfg_.stereoSpread, -1.f, 1.f);
+      spreadRing_[i] = float(ring) * fInvMaxRing;
+    }
+  }
+
+  void updatePan(int VN) {
+    using namespace math;
+    for (int i = 0; i < VN; ++i) {
+      const float pNorm = spreadRing_[i];
+      const float p = clamp01(pNorm * (cfg_.stereoSpread + mod_.stereoSpread));
       panL_[i] = panGainL(p);
       panR_[i] = panGainR(p);
     }
@@ -159,9 +175,11 @@ class SwarmMorph {
  private:
   using MorphOsc = MorphOscN<N, SR>;
   Cfg cfg_;
+  Mod mod_;
   MorphOsc osc_;
 
-  std::array<float, N> tmp_{};
+  std::array<float, N> spreadRing_{};
+
   std::array<float, N> detuneMul_{};
   std::array<float, N> gains_{};
   std::array<float, N> panL_{}, panR_{};

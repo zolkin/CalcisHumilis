@@ -5,11 +5,27 @@
 
 #include "audio/DJFilter.h"
 #include "dsp/Util.h"
+#include "math/Util.h"
 #include "mod/ADEnvelopes.h"
 
-namespace zlkm::ui {
+// Desired usage:
+// using TraitName = ZLKM_PARAM_TRAITS(Type, Min, Max, Default);
+// e.g.:
+// ParameterSpecs.h
+// using CutoffTraits = ZLKM_PARAM_TRAITS(float, 20.f, 20000.f, 440.f);
+// using ResonanceTraits = ZLKM_PARAM_TRAITS(float, 0.1f, 10.f, 1.f);
+// UI.h/_impl.hpp:
+// page[x].mappers[y] = CutoffTraits::makeMapper(&cfg.cutoff);
+// Modulation usage:
+// auto slot1 = modMatrix.addModulation(envelopes[1],
+// CutoffTraits::makeModifier(&cfg.cutoff)); auto slot2 =
+// modMatrix.addModulation(lfos[2], CutoffTraits::makeModifier(&cfg.cutoff));
+// auto slot3 = modMatrix.addModulation(cvs[0], slot2.depthModifier());
+// auto slot4 = modMatrix.addModulation(lfos[1], lfos[2].freqModifier());
 
-class InputMapper {
+namespace zlkm::mod {
+
+class ParamInputMapper {
  public:
   using RawValue = int16_t;
   using ValueToSetRaw = void*;
@@ -17,9 +33,9 @@ class InputMapper {
   using RevMapFuncRaw = RawValue (*)(ValueToSetRaw);
   static const RawValue kMaxRawValue = 4095;
 
-  InputMapper() = default;
-  InputMapper(MapAndSetFuncRaw func, RevMapFuncRaw revFunc,
-              ValueToSetRaw valToSet)
+  ParamInputMapper() = default;
+  ParamInputMapper(MapAndSetFuncRaw func, RevMapFuncRaw revFunc,
+                   ValueToSetRaw valToSet)
       : mapFunc_(func), revMapFunc_(revFunc), valToSet_(valToSet) {
     assert(func != nullptr);
     assert(revFunc != nullptr);
@@ -40,14 +56,39 @@ class InputMapper {
   ValueToSetRaw valToSet_ = nullptr;
 };
 
-template <class ParamT, class HandlerT>
-class InputMapperMixin {
+class ParamModulator {
  public:
-  using IM = InputMapper;
+  using ModValue = float;
+  using ValueToSetRaw = void*;
+  using ModAndSetFuncRaw = void (*)(ModValue, ValueToSetRaw);
+
+  ParamModulator() = default;
+  ParamModulator(ModAndSetFuncRaw func, ValueToSetRaw valToSet)
+      : modFunc_(func), valToSet_(valToSet) {
+    assert(func != nullptr);
+    assert(valToSet_ != nullptr);
+  }
+
+  void modAndSet(ModValue value) { modFunc_(value, valToSet_); }
+
+ private:
+  static constexpr void noopMod_(ModValue, ValueToSetRaw) { /* no-op */ }
+
+  ModAndSetFuncRaw modFunc_ = noopMod_;
+  ValueToSetRaw valToSet_ = nullptr;
+};
+
+template <class ParamT, class HandlerT>
+class ParamMapModMixin {
+ public:
+  using IM = ParamInputMapper;
+  using MOD = ParamModulator;
   // Factory: pass a pointer to the target parameter to receive mapped value
-  static IM make(ParamT* target) {
+  static IM mapper(ParamT* target) {
     return IM(&mapFunc_, reverseMapFunc_, target);
   }
+
+  MOD modulator(ParamT* target) { return MOD(&modFunc_, target); }
 
  private:
   static void mapFunc_(int16_t value, void* cfg) {
@@ -56,6 +97,10 @@ class InputMapperMixin {
 
   static IM::RawValue reverseMapFunc_(void* cfg) {
     return HandlerT::reverseMap(*reinterpret_cast<ParamT*>(cfg));
+  }
+
+  static void modFunc_(float value, void* cfg) {
+    HandlerT::modAndSet(value, *reinterpret_cast<ParamT*>(cfg));
   }
 };
 
@@ -72,59 +117,37 @@ static inline float stickEnds(float f) {
 static inline float invStickEnds(float y) {
   static constexpr float stickyEnds = 0.05f;
   static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
-  if (y <= 0.f) return 0.f;
-  if (y >= 1.f) return 1.f;
-  return y / reducedRangeScale;
+  return math::clamp01(y) / reducedRangeScale;
 }
 
 template <class T, class Lim>
-class LinearMapper : public InputMapperMixin<T, LinearMapper<T, Lim>> {
-  using IM = InputMapper;
+class LinearMapMod : public ParamMapModMixin<T, LinearMapMod<T, Lim>> {
+  using IM = ParamInputMapper;
 
  public:
   static void mapAndSet(int16_t raw, T& out) {
     float x = float(raw) / float(IM::kMaxRawValue);
     x = stickEnds(x);
-    out = Lim::outMin() + x * (Lim::outMax() - Lim::outMin());
+    out = Lim::outMin() + x * (Lim::range());
   }
 
   static int16_t reverseMap(const T& in) {
-    float x = (in - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
+    float x = (in - Lim::outMin()) / (Lim::range());
     x = invStickEnds(x);
     if (x < 0.f) x = 0.f;
     if (x > 1.f) x = 1.f;
     return static_cast<int16_t>(x * float(IM::kMaxRawValue));
   }
-};
 
-// Exponential (power) mapper
-template <class T, class Lim, class ExpPolicy>
-class ExpPowMapper
-    : public InputMapperMixin<T, ExpPowMapper<T, Lim, ExpPolicy>> {
-  using IM = InputMapper;
-
- public:
-  static void mapAndSet(int16_t raw, T& out) {
-    float x = float(raw) / float(IM::kMaxRawValue);
-    x = powf(x, ExpPolicy::EXP);
-    x = stickEnds(x);
-    out = Lim::outMin() + x * (Lim::outMax() - Lim::outMin());
-  }
-  static int16_t reverseMap(const T& in) {
-    // Forward: raw->x -> pow -> stickEnds -> scale
-    float y = (in - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
-    float z = invStickEnds(y);
-    float x = powf(z, 1.0f / ExpPolicy::EXP);
-    if (x < 0.f) x = 0.f;
-    if (x > 1.f) x = 1.f;
-    return int16_t(x * float(IM::kMaxRawValue));
+  static void modAndSet(float modValue, T& out) {
+    out = Lim::clamp(out + modValue * Lim::range());
   }
 };
 
 // dB-range mapper: MIN..MAX in dB mapped to linear amplitude
 template <class Lim>
-class DbMapper : public InputMapperMixin<float, DbMapper<Lim>> {
-  using IM = InputMapper;
+class DbMapMod : public ParamMapModMixin<float, DbMapMod<Lim>> {
+  using IM = ParamInputMapper;
 
  public:
   static void mapAndSet(int16_t raw, float& out) {
@@ -137,66 +160,73 @@ class DbMapper : public InputMapperMixin<float, DbMapper<Lim>> {
     // Guard against non-positive input
     float amp = in <= 0.f ? powf(10.f, Lim::outMin() * 0.05f) : in;
     float dB = 20.f * log10f(amp);
-    float x = (dB - Lim::outMin()) / (Lim::outMax() - Lim::outMin());
+    float x = (dB - Lim::outMin()) / (Lim::range());
     if (x < 0.f) x = 0.f;
     if (x > 1.f) x = 1.f;
     return static_cast<int16_t>(x * float(IM::kMaxRawValue));
   }
+
+  static void modAndSet(float modValue, float& out) {
+    // modValue is in dB units
+    float dB = 20.f * log10f(out);
+    dB += modValue * Lim::range();
+    out = Lim::clamp(powf(10.f, dB * 0.05f));
+  }
 };
 
 // Envelope rate mapper: 0..1 -> [msMin..msMax] -> rate given SR
-template <class MsLim, int SR>
-class RateMapper : public InputMapperMixin<float, RateMapper<MsLim, SR>> {
-  using IM = InputMapper;
+template <class Lim, int SR>
+class RateMapMod : public ParamMapModMixin<float, RateMapMod<Lim, SR>> {
+  using IM = ParamInputMapper;
 
  public:
   static void mapAndSet(int16_t raw, float& out) {
     float x = float(raw) / float(IM::kMaxRawValue);
-    float ms = MsLim::outMin() + x * (MsLim::outMax() - MsLim::outMin());
-    out = zlkm::dsp::msToRate(ms, float(SR));
+    out = Lim::outMin() + x * (Lim::range());
   }
 
   static int16_t reverseMap(const float& in) {
-    float ms = zlkm::dsp::rateToMs(in, static_cast<float>(SR));
-    float x = (ms - MsLim::outMin()) / (MsLim::outMax() - MsLim::outMin());
-    if (x < 0.f) x = 0.f;
-    if (x > 1.f) x = 1.f;
+    float x = (in - Lim::outMin()) / (Lim::range());
     return int16_t(x * float(IM::kMaxRawValue));
+  }
+
+  static void modAndSet(float modValue, float& out) {
+    // modValue is in ms units
+    out = Lim::clamp(out + modValue * (Lim::range()));
   }
 };
 
 // Integer mapper (nearest) in [outMin..outMax]
 template <class Lim>
-class IntMapper : public InputMapperMixin<int, IntMapper<Lim>> {
-  using IM = InputMapper;
+class IntMapMod : public ParamMapModMixin<int, IntMapMod<Lim>> {
+  using IM = ParamInputMapper;
 
  public:
   static void mapAndSet(int16_t raw, int& out) {
     float x = float(raw) / float(IM::kMaxRawValue);
     x = stickEnds(x);
-    float v = Lim::outMin() + x * (Lim::outMax() - Lim::outMin());
+    float v = Lim::outMin() + x * Lim::range();
     int iv = static_cast<int>(v + (v >= 0 ? 0.5f : -0.5f));
-    int lo = static_cast<int>(Lim::outMin());
-    int hi = static_cast<int>(Lim::outMax());
-    if (iv < lo) iv = lo;
-    if (iv > hi) iv = hi;
-    out = iv;
+    out = Lim::clamp(iv);
   }
 
   static int16_t reverseMap(const int& in) {
-    float x = (static_cast<float>(in) - Lim::outMin()) /
-              (Lim::outMax() - Lim::outMin());
+    float x = (static_cast<float>(in) - Lim::outMin()) / (Lim::range());
     x = invStickEnds(x);
-    if (x < 0.f) x = 0.f;
-    if (x > 1.f) x = 1.f;
     return int16_t(x * float(IM::kMaxRawValue));
+  }
+
+  static void modAndSet(float modValue, int& out) {
+    float v = static_cast<float>(out) + modValue * (Lim::range());
+    int iv = static_cast<int>(v + (v >= 0 ? 0.5f : -0.5f));
+    out = Lim::clamp(iv);
   }
 };
 
 // Boolean threshold mapper
 template <class Thr>
-class BoolMapper : public InputMapperMixin<bool, BoolMapper<Thr>> {
-  using IM = InputMapper;
+class BoolMapMod : public ParamMapModMixin<bool, BoolMapMod<Thr>> {
+  using IM = ParamInputMapper;
 
  public:
   static void mapAndSet(int16_t raw, bool& out) {
@@ -208,11 +238,17 @@ class BoolMapper : public InputMapperMixin<bool, BoolMapper<Thr>> {
   static int16_t reverseMap(const bool& in) {
     return in ? IM::kMaxRawValue : 0;
   }
+
+  static void modAndSet(float modValue, bool& out) {
+    if (modValue >= Thr::thresh()) {
+      out = !out;
+    }
+  }
 };
 
 template <int SR>
 struct FilterMapper {
-  using IM = InputMapper;
+  using IM = ParamInputMapper;
   using ParamT = typename ::zlkm::audio::SafeFilterParams<SR>;
 
   static IM makeCutoff(ParamT& t) {
@@ -266,8 +302,9 @@ struct FilterMapper {
 
 // Envelope input mapper: maps UI controls to EnvCfg fields
 struct EnvCurveMapper {
-  using IM = InputMapper;
-  // Curve [0..1]: interpolate cLin,cSquare across Log(2,-1)->Lin(1,0)->Exp(0,1)
+  using IM = ParamInputMapper;
+  // Curve [0..1]: interpolate cLin,cSquare across
+  // Log(2,-1)->Lin(1,0)->Exp(0,1)
   static IM make(mod::EnvCfg& e) {
     using namespace zlkm::mod;
     return IM(
@@ -282,71 +319,69 @@ struct EnvCurveMapper {
         &e.curve);
   }
 };
-}  // namespace zlkm::ui
+}  // namespace zlkm::mod
 
-// Helper macros to define limit and exponent structs for mappers
-#define _ZLKM_MIN_MAX_NAME(NAME) _Limits##NAME
-#define _ZLKM_EXP_NAME(NAME) _ExpPol##NAME
-
-#define _ZLKM_DEFINE_MIN_MAX(LMIN, LMAX, NAME)         \
-  struct _ZLKM_MIN_MAX_NAME(NAME) {                    \
-    static constexpr float outMin() { return (LMIN); } \
-    static constexpr float outMax() { return (LMAX); } \
+// functions instead of constants here to be able to define it in function scope
+// Names chosen so no macro clashes occur
+#define ZLKM_DEFINE_MIN_MAX_DEFAULT(TYPE, LMIN, LMAX, LDEFAULT)     \
+  struct {                                                          \
+    static constexpr TYPE outMin() { return (LMIN); }               \
+    static constexpr TYPE outMax() { return (LMAX); }               \
+    static constexpr TYPE defaultValue() { return (LDEFAULT); }     \
+    static constexpr TYPE range() { return (outMax() - outMin()); } \
+    static constexpr TYPE clamp(TYPE v) {                           \
+      return ::zlkm::math::clamp<TYPE>(v, outMin(), outMax());      \
+    }                                                               \
   }
 
-#define _ZLKM_DEFINE_EXP(EXP, NAME)     \
-  struct _ZLKM_EXP_NAME(NAME) {         \
-    static constexpr float EXP = (EXP); \
-  };
+#define ZLKM_DEFINE_MIN_MAX(TYPE, LMIN, LMAX) \
+  ZLKM_DEFINE_MIN_MAX_DEFAULT(TYPE, LMIN, LMAX, LMIN)
+#define ZLKM_DEFINE_FMIN_MAX(LMIN, LMAX) ZLKM_DEFINE_MIN_MAX(float, LMIN, LMAX)
+
+#define ZLKM_MIN_MAX_DEFAULT_LIN_PARAM(TYPE, LMIN, LMAX, LDEFAULT, NAME) \
+  using NAME##Limits =                                                   \
+      ZLKM_DEFINE_MIN_MAX_DEFAULT(TYPE, LMIN, LMAX, LDEFAULT);           \
+  using NAME = ::zlkm::mod::LinearMapper<float, NAME##Limits>;
 
 // Linear float mapper factory (usage: ZLKM_UI_LIN_FMAPPER(min,max)(&cfg))
-#define ZLKM_UI_LIN_FMAPPER(MIN, MAX, VAL)                                  \
-  [&]() {                                                                   \
-    _ZLKM_DEFINE_MIN_MAX(MIN, MAX, FLIN);                                   \
-    return ::zlkm::ui::LinearMapper<float, _ZLKM_MIN_MAX_NAME(FLIN)>::make( \
-        VAL);                                                               \
-  }()
-
-// Exponential float mapper factory (usage: ZLKM_UI_EXP_FMAPPER(min,max)(&cfg))
-#define ZLKM_UI_EXP_FMAPPER_EX(MIN, MAX, EXP, VAL)                    \
-  [&]() {                                                             \
-    _ZLKM_DEFINE_MIN_MAX(MIN, MAX, FEXP);                             \
-    _ZLKM_DEFINE_EXP(EXP, FEXP);                                      \
-    return ::zlkm::ui::ExpPowMapper<float, _ZLKM_MIN_MAX_NAME(FEXP),  \
-                                    _ZLKM_EXP_NAME(FEXP)>::make(VAL); \
+#define ZLKM_UI_LIN_FMAPPER(MIN, MAX, VAL)                      \
+  [&]() {                                                       \
+    using FLim = ZLKM_DEFINE_FMIN_MAX(MIN, MAX);                \
+    return ::zlkm::mod::LinearMapMod<float, FLim>::mapper(VAL); \
   }()
 
 #define ZLKM_UI_EXP_FMAPPER(MIN, MAX, VAL) \
   ZLKM_UI_EXP_FMAPPER_EX(MIN, MAX, 1.6f, VAL)
 
 // dB-range mapper factory (usage: ZLKM_UI_DB_FMAPPER(dbMin,dbMax)(&cfg))
-#define ZLKM_UI_DB_FMAPPER(DB_MIN, DB_MAX, VAL)                       \
-  [&]() {                                                             \
-    _ZLKM_DEFINE_MIN_MAX(DB_MIN, DB_MAX, DB_L);                       \
-    return ::zlkm::ui::DbMapper<_ZLKM_MIN_MAX_NAME(DB_L)>::make(VAL); \
+#define ZLKM_UI_DB_FMAPPER(DB_MIN, DB_MAX, VAL)         \
+  [&]() {                                               \
+    using DBLim = ZLKM_DEFINE_FMIN_MAX(DB_MIN, DB_MAX); \
+    return ::zlkm::mod::DbMapMod<DBLim>::make(VAL);     \
   }()
 
 // Rate mapper factory
-#define ZLKM_UI_RATE_FMAPPER(MS_MIN, MS_MAX, SR, VAL)                          \
-  [&]() {                                                                      \
-    _ZLKM_DEFINE_MIN_MAX(MS_MIN, MS_MAX, RateL);                               \
-    return ::zlkm::ui::RateMapper<_ZLKM_MIN_MAX_NAME(RateL), (SR)>::make(VAL); \
+#define ZLKM_UI_RATE_FMAPPER(MS_MIN, MS_MAX, SR, VAL)                    \
+  [&]() {                                                                \
+    using RateL = ZLKM_DEFINE_FMIN_MAX(zlkm::dsp::msToRate(MS_MIN, SR),  \
+                                       zlkm::dsp::msToRate(MS_MAX, SR)); \
+    return ::zlkm::mod::RateMapMod<RateL, (SR)>::mapper(VAL);            \
   }()
 
 // Integer mapper factory
-#define ZLKM_UI_INT_MAPPER(MIN, MAX, VAL)                              \
-  [&]() {                                                              \
-    _ZLKM_DEFINE_MIN_MAX(MIN, MAX, IntL);                              \
-    return ::zlkm::ui::IntMapper<_ZLKM_MIN_MAX_NAME(IntL)>::make(VAL); \
+#define ZLKM_UI_INT_MAPPER(MIN, MAX, VAL)             \
+  [&]() {                                             \
+    using IntL = ZLKM_DEFINE_MIN_MAX(int, MIN, MAX);  \
+    return ::zlkm::mod::IntMapMod<IntL>::mapper(VAL); \
   }()
 
 // Boolean threshold mapper factory
-#define ZLKM_UI_BOOL_MAPPER_TH(THRESHOLD, VAL)                    \
-  [&]() {                                                         \
-    struct _BoolThr##__LINE__ {                                   \
-      static constexpr float thresh() { return (THRESHOLD); }     \
-    };                                                            \
-    return ::zlkm::ui::BoolMapper<_BoolThr##__LINE__>::make(VAL); \
+#define ZLKM_UI_BOOL_MAPPER_TH(THRESHOLD, VAL)                       \
+  [&]() {                                                            \
+    struct _BoolThr##__LINE__ {                                      \
+      static constexpr float thresh() { return (THRESHOLD); }        \
+    };                                                               \
+    return ::zlkm::mod::BoolMapMod<_BoolThr##__LINE__>::mapper(VAL); \
   }()
 
 #define ZLKM_UI_BOOL_MAPPER(VAL) ZLKM_UI_BOOL_MAPPER_TH(0.5f, VAL)

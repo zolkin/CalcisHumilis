@@ -34,6 +34,7 @@ class CalcisHumilis {
 
   static constexpr float rate(float ms) { return dsp::msToRate(ms, SR); }
   static constexpr float cycles(float hz) { return hz * INV_SR; }
+  static inline float centsToMul(float cents) { return exp2f(cents / 1200.0f); }
 
   using Swarm = audio::engine::SwarmMorph<MAX_SWARM_VOICES, SR * OS>;
   using SwarmCfg = typename Swarm::Cfg;
@@ -61,13 +62,13 @@ class CalcisHumilis {
     SwarmCfg swarmOsc;
 
     float outGain = .7f;
-    float cyclesPerSample = cycles(65.f);
+    // float cyclesPerSample = cycles(65.f);
 
     std::array<EnvCfg, EnvCount> envs = {
         EnvCfg{rate(1.f), rate(330.f)},         // amp
         EnvCfg{rate(10.f), rate(20.f), 8.f},    // pitch
         EnvCfg{rate(1.f), rate(6.f), .2f},      // click
-        EnvCfg{rate(200.f), rate(500.f), 1.f},  // swarm
+        EnvCfg{rate(200.f), rate(500.f), .5f},  // swarm
         EnvCfg{rate(10.f), rate(200.f), 1.f},   // morph
         EnvCfg{rate(1.f), rate(60.f), 1.f},     // filter
     };
