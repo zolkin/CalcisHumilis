@@ -90,6 +90,19 @@ References
 - `src/mod/ADEnvelopes.h` (source values), `src/CalcisHumilis_impl.hh` (integration site)
 - `src/ui/UI.h` (pages/buttons), `src/ui/Controller.h` (knob handling), `src/ui/View.h` (rings)
 
+Update (Oct 26): design details for implementation
+- Route shape refined to: { Src, Amount, ParamModulator }
+  - Src is a reference to a value (float or tiny wrapper) produced by a modulator (env/LFO/CV).
+  - Amount is a scalar depth (sign encodes polarity).
+  - ParamModulator is a destination-specific functor that applies the accumulated modulation sum (add → clamp → set).
+- Per-destination apply flow:
+  1) Gather all active routes targeting that parameter.
+  2) Accumulate sum = Σ (Src * Amount).
+  3) Invoke ParamModulator(sum) to update the parameter (domain math + clamp + set).
+- ParamSpec types will provide both:
+  - UI mappers (write into Mod structs), and
+  - ParamModulators (apply modulation in the DSP path).
+
 ## 4a) Unified parameter handling and per-sample modulation (policy)
 
 Goal: Make every parameter modulatable per-sample (FM-friendly), while keeping the filter path simple, safe, and performant. Unify UI and audio-loop handling via a single source of truth for parameter ranges and mappings.
@@ -123,6 +136,15 @@ Acceptance / steps
 - [ ] Use ParamSpec in Mod Matrix apply functions and in UI mappers so both share identical transforms.
 - [ ] Implement hybrid update: exact target recompute at block/micro-block boundaries; derivative deltas per sample; re-seed exact tan() on large steps.
 - [ ] Keep final output limiter only; avoid intermediate soft clips; evaluate state soft-sat only if instability or harsh artifacts are observed under extreme modulation.
+
+Update (Oct 26): structure for modulatable parameters
+- Separate Cfg and Mod structures per module/engine. Where identical, `using Mod = Cfg` is acceptable; inheritance is optional but defaults may be trickier.
+- ParamSpec types become the single source of truth and manufacture:
+  - UI mapper: writes normalized UI input into Mod.
+  - ParamModulator: applies accumulated modulation (add → clamp → set) in the DSP path.
+- Mod application policy:
+  - For each destination per-sample, combine all routes (Σ Src*Amount) and pass the sum into the destination’s ParamModulator.
+  - Hybrid time base: exact recompute at block/micro-block boundaries; derivative deltas in between; re-seed exact tan() on large steps.
 
 ## 5) Consolidate parameter pages
 
