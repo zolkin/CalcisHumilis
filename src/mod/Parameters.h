@@ -108,16 +108,20 @@ class ParamMapModMixin {
 static inline float stickEnds(float f) {
   static constexpr float stickyEnds = 0.05f;
   static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
-  if (f < stickyEnds) return 0.f;
-  if (f > 1.f - stickyEnds) return 1.f;
-  return f * reducedRangeScale;
+  if (f <= stickyEnds) return 0.f;
+  if (f >= 1.f - stickyEnds) return 1.f;
+  // Map center [stickyEnds..1-stickyEnds] -> [0..1]
+  return (f - stickyEnds) * reducedRangeScale;
 }
 
 // Inverse of stickEnds() for the central region; clamps at edges
 static inline float invStickEnds(float y) {
   static constexpr float stickyEnds = 0.05f;
   static constexpr float reducedRangeScale = 1.f / (1.f - 2.f * stickyEnds);
-  return math::clamp01(y) / reducedRangeScale;
+  // Inverse for center: f = y*(1-2s) + s; preserve edges exactly
+  if (y <= 0.f) return 0.f;
+  if (y >= 1.f) return 1.f;
+  return y / reducedRangeScale + stickyEnds;
 }
 
 template <class T, class Lim>
@@ -134,8 +138,7 @@ class LinearMapMod : public ParamMapModMixin<T, LinearMapMod<T, Lim>> {
   static int16_t reverseMap(const T& in) {
     float x = (in - Lim::outMin()) / (Lim::range());
     x = invStickEnds(x);
-    if (x < 0.f) x = 0.f;
-    if (x > 1.f) x = 1.f;
+    x = math::clamp01(x);
     return static_cast<int16_t>(x * float(IM::kMaxRawValue));
   }
 
@@ -161,8 +164,7 @@ class DbMapMod : public ParamMapModMixin<float, DbMapMod<Lim>> {
     float amp = in <= 0.f ? powf(10.f, Lim::outMin() * 0.05f) : in;
     float dB = 20.f * log10f(amp);
     float x = (dB - Lim::outMin()) / (Lim::range());
-    if (x < 0.f) x = 0.f;
-    if (x > 1.f) x = 1.f;
+    x = math::clamp01(x);
     return static_cast<int16_t>(x * float(IM::kMaxRawValue));
   }
 
@@ -283,7 +285,7 @@ struct EnvCurveMapper {
 #define ZLKM_DEFINE_MIN_MAX(TYPE, LMIN, LMAX) \
   ZLKM_DEFINE_MIN_MAX_DEFAULT(TYPE, LMIN, LMAX, LMIN)
 
-#define ZLKM_DEFINE_FMIN_MAX(LMIN, LMAX) ZLKM_DEFINE_MIN_MAX(float, LMIN, LMAX)
+#define ZLKM_DEFINE_MIN_MAX_F(LMIN, LMAX) ZLKM_DEFINE_MIN_MAX(float, LMIN, LMAX)
 
 #define ZLKM_MIN_MAX_DEFAULT_LIN_PARAM(TYPE, LMIN, LMAX, LDEFAULT, NAME) \
   using NAME##Limits =                                                   \
@@ -293,7 +295,7 @@ struct EnvCurveMapper {
 // Linear float mapper factory (usage: ZLKM_UI_LIN_FMAPPER(min,max)(&cfg))
 #define ZLKM_UI_LIN_FMAPPER(MIN, MAX, VAL)                      \
   [&]() {                                                       \
-    using FLim = ZLKM_DEFINE_FMIN_MAX(MIN, MAX);                \
+    using FLim = ZLKM_DEFINE_MIN_MAX_F(MIN, MAX);               \
     return ::zlkm::mod::LinearMapMod<float, FLim>::mapper(VAL); \
   }()
 
@@ -301,18 +303,18 @@ struct EnvCurveMapper {
   ZLKM_UI_EXP_FMAPPER_EX(MIN, MAX, 1.6f, VAL)
 
 // dB-range mapper factory (usage: ZLKM_UI_DB_FMAPPER(dbMin,dbMax)(&cfg))
-#define ZLKM_UI_DB_FMAPPER(DB_MIN, DB_MAX, VAL)         \
-  [&]() {                                               \
-    using DBLim = ZLKM_DEFINE_FMIN_MAX(DB_MIN, DB_MAX); \
-    return ::zlkm::mod::DbMapMod<DBLim>::make(VAL);     \
+#define ZLKM_UI_DB_FMAPPER(DB_MIN, DB_MAX, VAL)          \
+  [&]() {                                                \
+    using DBLim = ZLKM_DEFINE_MIN_MAX_F(DB_MIN, DB_MAX); \
+    return ::zlkm::mod::DbMapMod<DBLim>::make(VAL);      \
   }()
 
 // Rate mapper factory
-#define ZLKM_UI_RATE_FMAPPER(MS_MIN, MS_MAX, SR, VAL)                    \
-  [&]() {                                                                \
-    using RateL = ZLKM_DEFINE_FMIN_MAX(zlkm::dsp::msToRate(MS_MIN, SR),  \
-                                       zlkm::dsp::msToRate(MS_MAX, SR)); \
-    return ::zlkm::mod::RateMapMod<RateL, (SR)>::mapper(VAL);            \
+#define ZLKM_UI_RATE_FMAPPER(MS_MIN, MS_MAX, SR, VAL)                     \
+  [&]() {                                                                 \
+    using RateL = ZLKM_DEFINE_MIN_MAX_F(zlkm::dsp::msToRate(MS_MIN, SR),  \
+                                        zlkm::dsp::msToRate(MS_MAX, SR)); \
+    return ::zlkm::mod::RateMapMod<RateL, (SR)>::mapper(VAL);             \
   }()
 
 // Integer mapper factory

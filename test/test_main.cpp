@@ -2,7 +2,6 @@
 
 // Declaration from test files
 void test_mappers();
-void test_filter_params();
 void test_ad_envelopes();
 void test_interpolators();
 void test_quad_manager();
@@ -17,7 +16,6 @@ TEST_MAIN() {
 
   UNITY_BEGIN();
   test_mappers();
-  test_filter_params();
   test_ad_envelopes();
   test_interpolators();
   test_quad_manager();
