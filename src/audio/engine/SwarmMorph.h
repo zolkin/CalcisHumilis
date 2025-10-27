@@ -3,7 +3,7 @@
 
 #include <array>
 
-#include "audio/MorphOsc.h"
+#include "audio/source/MorphOsc.h"
 
 namespace zlkm::audio::engine {
 
@@ -173,7 +173,8 @@ class SwarmMorph {
   }
 
  private:
-  using MorphOsc = MorphOscN<N, SR>;
+  using MorphOsc = src::MorphOscN<N, SR>;
+
   Cfg cfg_;
   Mod mod_;
   MorphOsc osc_;

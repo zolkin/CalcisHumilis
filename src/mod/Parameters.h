@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <math.h>
 
-#include "audio/DJFilter.h"
+#include "audio/processors/DJFilter.h"
 #include "dsp/Util.h"
 #include "math/Util.h"
 #include "mod/ADEnvelopes.h"
@@ -246,60 +246,6 @@ class BoolMapMod : public ParamMapModMixin<bool, BoolMapMod<Thr>> {
   }
 };
 
-template <int SR>
-struct FilterMapper {
-  using IM = ParamInputMapper;
-  using ParamT = typename ::zlkm::audio::SafeFilterParams<SR>;
-
-  static IM makeCutoff(ParamT& t) {
-    struct SetCutoff {
-      static void set(ParamT& p, float x) { p.setCutoff01(x); }
-      static float get(const ParamT& p) { return p.cutoff01(); }
-    };
-    return makeMapper_<SetCutoff>(t);
-  }
-
-  static IM makeResonance(ParamT& t) {
-    struct SetResonance {
-      static void set(ParamT& p, float x) { p.setRes01(x); }
-      static float get(const ParamT& p) { return p.res01(); }
-    };
-    return makeMapper_<SetResonance>(t);
-  }
-
-  static IM makeMorph(ParamT& t) {
-    struct SetMorph {
-      static void set(ParamT& p, float x) { p.setMorph01(x); }
-      static float get(const ParamT& p) { return p.morph01(); }
-    };
-    return makeMapper_<SetMorph>(t);
-  }
-
-  static IM makeDrive(ParamT& t) {
-    struct SetDrive {
-      static void set(ParamT& p, float x) { p.setDrive01(x); }
-      static float get(const ParamT& p) { return p.drive01(); }
-    };
-    return makeMapper_<SetDrive>(t);
-  }
-
- private:
-  template <class ParamSetter>
-  static IM makeMapper_(ParamT& target) {
-    return IM(
-        [](int16_t raw, IM::ValueToSetRaw params) {
-          float x = float(raw) / float(IM::kMaxRawValue);
-          x = stickEnds(x);
-          ParamSetter::set(*reinterpret_cast<ParamT*>(params), x);
-        },
-        [](IM::ValueToSetRaw params) {
-          float v = ParamSetter::get(*reinterpret_cast<ParamT*>(params));
-          return int16_t((v * float(IM::kMaxRawValue)));
-        },
-        &target);
-  }
-};
-
 // Envelope input mapper: maps UI controls to EnvCfg fields
 struct EnvCurveMapper {
   using IM = ParamInputMapper;
@@ -336,6 +282,7 @@ struct EnvCurveMapper {
 
 #define ZLKM_DEFINE_MIN_MAX(TYPE, LMIN, LMAX) \
   ZLKM_DEFINE_MIN_MAX_DEFAULT(TYPE, LMIN, LMAX, LMIN)
+
 #define ZLKM_DEFINE_FMIN_MAX(LMIN, LMAX) ZLKM_DEFINE_MIN_MAX(float, LMIN, LMAX)
 
 #define ZLKM_MIN_MAX_DEFAULT_LIN_PARAM(TYPE, LMIN, LMAX, LDEFAULT, NAME) \

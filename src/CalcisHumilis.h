@@ -6,9 +6,9 @@
 
 #include <Stream.h>
 
-#include "audio/DJFilter.h"
-#include "audio/MorphOsc.h"
-#include "audio/engine/Swarm.h"
+#include "audio/engine/SwarmMorph.h"
+#include "audio/processors/DJFilter.h"
+#include "audio/processors/Drive.h"
 #include "mod/ADEnvelopes.h"
 #include "platform/platform.h"
 
@@ -38,8 +38,12 @@ class CalcisHumilis {
 
   using Swarm = audio::engine::SwarmMorph<MAX_SWARM_VOICES, SR * OS>;
   using SwarmCfg = typename Swarm::Cfg;
-  using Filter = audio::DJFilterTPT<SR * OS>;
+
+  using Filter = audio::proc::DJFilterTPT<SR * OS>;
   using FilterCfg = typename Filter::Cfg;
+  using FilterMod = typename Filter::Mod;
+
+  using Drive = audio::proc::DriveFX;
 
   enum OscMode { OscSwarm = 0, OscCount };
 
@@ -58,11 +62,8 @@ class CalcisHumilis {
 
   struct Cfg {
     OscMode oscMode = OscSwarm;
-
     SwarmCfg swarmOsc;
-
     float outGain = .7f;
-    // float cyclesPerSample = cycles(65.f);
 
     std::array<EnvCfg, EnvCount> envs = {
         EnvCfg{rate(1.f), rate(330.f)},         // amp
@@ -70,10 +71,11 @@ class CalcisHumilis {
         EnvCfg{rate(1.f), rate(6.f), .2f},      // click
         EnvCfg{rate(200.f), rate(500.f), .5f},  // swarm
         EnvCfg{rate(10.f), rate(200.f), 1.f},   // morph
-        EnvCfg{rate(1.f), rate(60.f), 1.f},     // filter
+        EnvCfg{rate(1.f), rate(60.f), 0.2f},    // filter
     };
 
     FilterCfg filter;
+    float drive = 1.f;
 
     int trigCounter = 0;
 
@@ -109,11 +111,13 @@ class CalcisHumilis {
 
   // Oscillators run at OS*SR so their phase math sees true step size
   Swarm swarm;
-  FilterCfg fCfg_;
+  FilterCfg fCfg_;  // interpolation target
+  FilterMod fMod_;
 
   float currentPan = 0.5f;
 
   Filter filterL, filterR;
+  float driveGain_ = 1.0f;
 
   int trigCounter_ = 0;
 };

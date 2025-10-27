@@ -4,11 +4,11 @@
 #include <array>
 
 #include "dsp/Blep.h"
-#include "dsp/Util.h"
+#include "dsp/SinCosPoly9.h"
 #include "math/Util.h"
 #include "platform/platform.h"
 
-namespace zlkm::audio {
+namespace zlkm::audio::src {
 
 // -------- MORPH SINE->TRIANGLE->SQUARE->SAW --------
 template <int N, int SR>
@@ -41,7 +41,9 @@ class MorphOscN {
   };
 
   // --- Primitive naive generators (only when needed) ---
-  static inline float sine_naive(float t0) { return dsp::sin01_poly7(t0); }
+  static inline float sine_naive(float t0) {
+    return dsp::fast_sin_poly(t0 * math::PI_F);
+  }
   static inline float triangle_naive(float t0) {
     // 1 - 4*|t - 0.5|
     return 1.0f - 4.0f * fabsf(t0 - 0.5f);
@@ -183,4 +185,4 @@ class MorphOscN {
   }
 };
 
-}  // namespace zlkm::audio
+}  // namespace zlkm::audio::src

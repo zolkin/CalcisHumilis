@@ -1,7 +1,7 @@
 #include "platform/test.h"
 // Needs to come first
 
-#include "audio/DJFilter.h"
+#include "..\src\audio\processors\DJFilter.h"
 
 using namespace zlkm::audio;
 

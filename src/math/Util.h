@@ -1,5 +1,8 @@
 #pragma once
 
+#undef min
+#undef max
+
 namespace zlkm::math {
 
 template <class T>
@@ -7,11 +10,17 @@ constexpr T clamp(const T t, const T min, const T max) {
   return t < min ? min : t > max ? max : t;
 }
 
-inline float interpolate(float from, float to, float t) {
+// Arm Cortex-M33 optimized version
+// https://developer.arm.com/documentation/100235/0003/the-cortex-m33-instruction-set/cortex-m33-instructions
+constexpr float clamp(float t, float min, float max) {
+  return fmin(fmax(t, min), max);
+}
+
+constexpr float interpolate(float from, float to, float t) {
   return (1.0f - t) * from + t * to;
 }
 
-static inline float rand01() {
+inline float rand01() {
   static uint32_t rng = 0x6d5fca4b;
   rng ^= rng << 13;
   rng ^= rng >> 17;
@@ -20,9 +29,9 @@ static inline float rand01() {
 }
 
 // Clamp to [0,1]
-static inline float clamp01(float x) { return clamp(x, 0.0f, 1.0f); }
+constexpr float clamp01(float x) { return clamp(x, 0.0f, 1.0f); }
 
-inline float smoothstep(float a, float b, float x) {
+constexpr float smoothstep(float a, float b, float x) {
   float t = clamp01((x - a) / (b - a));
   return t * t * (3.f - 2.f * t);
 }

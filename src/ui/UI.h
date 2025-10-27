@@ -94,8 +94,7 @@ class UI {
                        .activeLow = true,
                        .usePullUp = true,
                        .debounceTicks = 5}),
-        view_(selection_, ViewCfg{.fps = 60, .pCfg = ucfg_.pCfg}, fb_),
-        filterParams_(&ucfg_.pCfg->filter) {
+        view_(selection_, ViewCfg{.fps = 60, .pCfg = ucfg_.pCfg}, fb_) {
     initSpecs();
     controller_.seedFromCfg();
     initSpecs();
@@ -175,21 +174,18 @@ class UI {
     t1.currentPage = 0;
     {
       auto& p = t1.pages[0];
-      using MyFilterMapper = FilterMapper<SR>;
       p.labels = {"RES", "CUT", "MRPH", "DRV"};
-      p.mappers[0] = MyFilterMapper::makeResonance(filterParams_);
-      p.mappers[1] = MyFilterMapper::makeCutoff(filterParams_);
-      p.mappers[2] = MyFilterMapper::makeMorph(filterParams_);
-      p.mappers[3] = MyFilterMapper::makeDrive(filterParams_);
+      auto& fcfg = cfg.filter;
+      p.mappers[0] = ZLKM_UI_LIN_FMAPPER(0.707f, 12.f, &fcfg.Q);
+      p.mappers[1] = ZLKM_UI_LIN_FMAPPER(20.f, 16000.f, &fcfg.cutoffHz);
+      p.mappers[2] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &fcfg.morph);
+      p.mappers[3] = ZLKM_UI_LIN_FMAPPER(1.f, 16.f, &cfg.drive);
     }
   }
 
   Cfg ucfg_;
   Calcis::Feedback* fb_{};
   zlkm::util::IdleTimer idleTimer_{10000};
-
-  // Pin source reference
-  audio::SafeFilterParams<CalcisTR::SR> filterParams_;
 
   // Components
   Selection selection_;

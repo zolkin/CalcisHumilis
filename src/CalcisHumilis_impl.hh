@@ -7,22 +7,8 @@
 namespace zlkm::ch {
 
 template <class TR>
-float CalcisHumilis<TR>::softClip(float x) {
-  const float t = 0.95f;
-  const bool isClip = (x > t) || (x < -t);
-  if (isClip) ++fb_->saturationCounter;
-  if (x > t) return t + (x - t) * 0.05f;
-  if (x < -t) return -t + (x + t) * 0.05f;
-  return x;
-}
-
-template <class TR>
 CalcisHumilis<TR>::CalcisHumilis(const Cfg* cfg, Feedback* fb)
-    : cfg_(cfg),
-      fb_(fb),
-      outGain_(cfg_->outGain),
-      // cyclesPerSample_(cfg_->cyclesPerSample),
-      swarm(cfg->swarmOsc) {}
+    : cfg_(cfg), fb_(fb), outGain_(cfg_->outGain), swarm(cfg->swarmOsc) {}
 
 template <class TR>
 void CalcisHumilis<TR>::trigger() {
@@ -34,9 +20,15 @@ template <size_t N>
 static inline void array_float_to_int32(const std::array<float, N>& src,
                                         std::array<int32_t, N>& dst) {
   for (size_t i = 0; i < N; ++i) {
-    float x = src[i] * 2147483647.0f;
-    x = fmaxf(-2147483648.0f, fminf(2147483647.0f, x));
-    dst[i] = (int32_t)x;
+    dst[i] = int32_t(src[i] * 2147483647.0f);
+  }
+}
+
+template <size_t N>
+static inline void array_float_to_int24(const std::array<float, N>& src,
+                                        std::array<int32_t, N>& dst) {
+  for (size_t i = 0; i < N; ++i) {
+    dst[i] = int32_t(src[i] * 8388607.0f) << 8;
   }
 }
 
@@ -59,7 +51,10 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
       makeBlockInterpolator<TR::BLOCK_FRAMES, 1>(&outGain_, {cfg_->outGain});
 
   auto filterCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
-      &fCfg_.gCut, cfg_->filter.asTarget());
+      &fCfg_.cutoffHz, cfg_->filter.asTarget());
+
+  auto driveItp =
+      makeBlockInterpolator<TR::BLOCK_FRAMES, 1>(&driveGain_, {cfg_->drive});
 
   IntBuffer buffer;
   for (size_t i = 0; i < TR::BLOCK_FRAMES; ++i) {
@@ -73,7 +68,7 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
       swarmCfgItp.update();
       calcisCfgItp.update();
       filterCfgItp.update();
-
+      driveItp.update();
       swarm.cfgUpdated();
     }
 
@@ -82,9 +77,17 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
     // ---------- No oversampling path ----------
     const float a = envelopes_.value(EnvAmp);
 
+    float& l = buffer[2 * i + 0];
+    float& r = buffer[2 * i + 1];
+    l = r = 0.f;
+
     if (a < 1e-5) {
       filterL.reset();
       filterR.reset();
+      swarm.mod() = typename Swarm::Mod{};
+      fMod_ = typename Filter::Mod{};
+      driveGain_ = 1.0f;
+      continue;
     }
 
     const float p = envelopes_.value(EnvPitch);
@@ -93,10 +96,6 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
     const float m = envelopes_.value(EnvMorph);
     const float f = envelopes_.value(EnvFilter);
 
-    float& l = buffer[2 * i + 0];
-    float& r = buffer[2 * i + 1];
-    l = r = 0.f;
-
     // TODO: manual modulation move to matrix later
     swarm.mod().cyclesPerSample = p * cyclesPerSample_;
     swarm.mod().detuneMul = math::interpolate(1.f, swarm.cfg().detuneMul, sw);
@@ -104,27 +103,28 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
     swarm.mod().morph = m;
     swarm.mod().pulseWidth = m;
 
+    // test filter mod
+    fMod_.cutoffHz = fCfg_.cutoffHz * f;
+    fMod_.Q = fCfg_.Q * sw * 0.5;
+
     swarm.tickStereo(l, r);
 
     {
-      ZLKM_PERF_SCOPE_SAMPLED("filter", 6);
-      l = filterL.process(l, fCfg_);
-      r = filterR.process(r, fCfg_);
-    }
-
-    {
-      ZLKM_PERF_SCOPE_SAMPLED("clip", 6);
-      l = softClip(l * a * g);
-      r = softClip(r * a * g);
+      // TODO: make flexible Processing chain
+      ZLKM_PERF_SCOPE_SAMPLED("Processors", 6);
+      const float drive = driveGain_ + p;
+      l = Drive::process(filterL.process(l, fCfg_, fMod_), drive) * a * g;
+      r = Drive::process(filterR.process(r, fCfg_, fMod_), drive) * a * g;
     }
   }
 
-  if constexpr (TR::BITS == 24) {
-    // dstLR[2 * i + 0] = (int32_t)lrintf(outL * 8388607.0f) << 8;
-    // dstLR[2 * i + 1] = (int32_t)lrintf(outR * 8388607.0f) << 8;
-  } else if constexpr (TR::BITS == 32) {
-    ZLKM_PERF_SCOPE_SAMPLED("array_float_to_int32", 6);
-    array_float_to_int32(buffer, destLR);
+  {
+    ZLKM_PERF_SCOPE_SAMPLED("array_float_to_int*", 6);
+    if constexpr (TR::BITS == 24) {
+      array_float_to_int24(buffer, destLR);
+    } else if constexpr (TR::BITS == 32) {
+      array_float_to_int32(buffer, destLR);
+    }
   }
 }
 
