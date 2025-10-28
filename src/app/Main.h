@@ -46,6 +46,7 @@ class MainApp {
   }
 
   static void audio_loop() {
+    ZLKM_PERF_SCOPE("MainApp::audio_loop");
     get().snapAudioCfg();
     get().audio_.update();
     get().publishUIFeedback();

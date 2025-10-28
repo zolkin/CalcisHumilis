@@ -42,17 +42,14 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
     trigCounter_ = cfg_->trigCounter;
     trigger();
   }
-  envelopes_.setEnvs(cfg_->envs);
+  envelopes_.cfg() = cfg_->envs;
 
   auto swarmCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
       swarm.cfg().i_begin(), cfg_->swarmOsc.asTarget());
-
   auto calcisCfgItp =
       makeBlockInterpolator<TR::BLOCK_FRAMES, 1>(&outGain_, {cfg_->outGain});
-
   auto filterCfgItp = makeBlockInterpolator<TR::BLOCK_FRAMES>(
       &fCfg_.cutoffHz, cfg_->filter.asTarget());
-
   auto driveItp =
       makeBlockInterpolator<TR::BLOCK_FRAMES, 1>(&driveGain_, {cfg_->drive});
 
@@ -86,6 +83,7 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
       filterR.reset();
       swarm.mod() = typename Swarm::Mod{};
       fMod_ = typename Filter::Mod{};
+      envelopes_.resetAll();
       driveGain_ = 1.0f;
       continue;
     }
@@ -119,7 +117,7 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
   }
 
   {
-    ZLKM_PERF_SCOPE_SAMPLED("array_float_to_int*", 6);
+    ZLKM_PERF_SCOPE_SAMPLED("array_float_to_int", 6);
     if constexpr (TR::BITS == 24) {
       array_float_to_int24(buffer, destLR);
     } else if constexpr (TR::BITS == 32) {

@@ -9,4 +9,6 @@ static constexpr float HALF_PI_F = 1.57079632679489661923f;
 static constexpr float INV_TWO_PI_F = 1.f / TWO_PI_F;
 static constexpr float INV_PI_F = 1.f / PI_F;
 
+static constexpr float EPSILON_F = 1e-5f;
+
 }  // namespace zlkm::math

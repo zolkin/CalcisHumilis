@@ -1,5 +1,5 @@
 #pragma once
-#include <math.h>
+#include "math/Util.h"
 
 namespace zlkm::audio::proc {
 
@@ -7,7 +7,7 @@ namespace zlkm::audio::proc {
 struct DriveFX {
   static inline float process(float x, float drive) {
     const float y = x * drive;
-    return y / (1.0f + fabsf(y));
+    return math::clamp(y / (1.0f + fabsf(y)), -1.0f, 1.0f);
   }
 };
 

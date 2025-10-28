@@ -42,8 +42,8 @@ class ParamInputMapper {
     assert(valToSet_ != nullptr);
   }
 
-  void mapAndSet(int16_t value) { mapFunc_(value, valToSet_); }
-  RawValue reverseMap() const { return revMapFunc_(valToSet_); }
+  inline void mapAndSet(int16_t value) { mapFunc_(value, valToSet_); }
+  inline RawValue reverseMap() const { return revMapFunc_(valToSet_); }
 
  private:
   static constexpr void noopMap_(RawValue, ValueToSetRaw) { /* no-op */ }
@@ -69,7 +69,7 @@ class ParamModulator {
     assert(valToSet_ != nullptr);
   }
 
-  void modAndSet(ModValue value) { modFunc_(value, valToSet_); }
+  inline void modAndSet(ModValue value) { modFunc_(value, valToSet_); }
 
  private:
   static constexpr void noopMod_(ModValue, ValueToSetRaw) { /* no-op */ }
@@ -125,7 +125,7 @@ static inline float invStickEnds(float y) {
 }
 
 template <class T, class Lim>
-class LinearMapMod : public ParamMapModMixin<T, LinearMapMod<T, Lim>> {
+class StickyEndsMapMod : public ParamMapModMixin<T, StickyEndsMapMod<T, Lim>> {
   using IM = ParamInputMapper;
 
  public:
@@ -177,22 +177,22 @@ class DbMapMod : public ParamMapModMixin<float, DbMapMod<Lim>> {
 };
 
 // Envelope rate mapper: 0..1 -> [msMin..msMax] -> rate given SR
-template <class Lim, int SR>
-class RateMapMod : public ParamMapModMixin<float, RateMapMod<Lim, SR>> {
+template <class T, class Lim>
+class LinearMapMod : public ParamMapModMixin<float, LinearMapMod<T, Lim>> {
   using IM = ParamInputMapper;
 
  public:
-  static void mapAndSet(int16_t raw, float& out) {
-    float x = float(raw) / float(IM::kMaxRawValue);
+  static void mapAndSet(int16_t raw, T& out) {
+    T x = T(raw) / T(IM::kMaxRawValue);
     out = Lim::outMin() + x * (Lim::range());
   }
 
-  static int16_t reverseMap(const float& in) {
-    float x = (in - Lim::outMin()) / (Lim::range());
-    return int16_t(x * float(IM::kMaxRawValue));
+  static int16_t reverseMap(const T& in) {
+    T x = (in - Lim::outMin()) / (Lim::range());
+    return int16_t(x * T(IM::kMaxRawValue));
   }
 
-  static void modAndSet(float modValue, float& out) {
+  static void modAndSet(float modValue, T& out) {
     // modValue is in ms units
     out = Lim::clamp(out + modValue * (Lim::range()));
   }
@@ -247,26 +247,6 @@ class BoolMapMod : public ParamMapModMixin<bool, BoolMapMod<Thr>> {
     }
   }
 };
-
-// Envelope input mapper: maps UI controls to EnvCfg fields
-struct EnvCurveMapper {
-  using IM = ParamInputMapper;
-  // Curve [0..1]: interpolate cLin,cSquare across
-  // Log(2,-1)->Lin(1,0)->Exp(0,1)
-  static IM make(mod::EnvCfg& e) {
-    using namespace zlkm::mod;
-    return IM(
-        [](int16_t raw, IM::ValueToSetRaw p) {
-          auto* curve = reinterpret_cast<EnvCurve*>(p);
-          curve->setCurve01(float(raw) / float(IM::kMaxRawValue));
-        },
-        [](IM::ValueToSetRaw p) {
-          auto* curve = reinterpret_cast<EnvCurve*>(p);
-          return int16_t((curve->getCurve01() * float(IM::kMaxRawValue)));
-        },
-        &e.curve);
-  }
-};
 }  // namespace zlkm::mod
 
 // functions instead of constants here to be able to define it in function scope
@@ -286,6 +266,8 @@ struct EnvCurveMapper {
   ZLKM_DEFINE_MIN_MAX_DEFAULT(TYPE, LMIN, LMAX, LMIN)
 
 #define ZLKM_DEFINE_MIN_MAX_F(LMIN, LMAX) ZLKM_DEFINE_MIN_MAX(float, LMIN, LMAX)
+#define ZLKM_DEFINE_MIN_MAX_DEF_F(LMIN, LMAX, LDEF) \
+  ZLKM_DEFINE_MIN_MAX_DEFAULT(float, LMIN, LMAX, LDEF)
 
 #define ZLKM_MIN_MAX_DEFAULT_LIN_PARAM(TYPE, LMIN, LMAX, LDEFAULT, NAME) \
   using NAME##Limits =                                                   \
@@ -314,7 +296,7 @@ struct EnvCurveMapper {
   [&]() {                                                                 \
     using RateL = ZLKM_DEFINE_MIN_MAX_F(zlkm::dsp::msToRate(MS_MIN, SR),  \
                                         zlkm::dsp::msToRate(MS_MAX, SR)); \
-    return ::zlkm::mod::RateMapMod<RateL, (SR)>::mapper(VAL);             \
+    return ::zlkm::mod::LinearMapMod<float, RateL>::mapper(VAL);          \
   }()
 
 // Integer mapper factory

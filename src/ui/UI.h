@@ -160,12 +160,11 @@ class UI {
     // Page 3: Amp Envelope (Attack/Decay/Depth/Curve)
     {
       auto& p3 = t0.pages[3];
-      p3.labels = {"ATK", "DEC", "DEP", "CURV"};
+      p3.labels = {"ATK", "DEC", "CURV"};
       auto& envAmp = cfg.envs[CH::EnvAmp];
       p3.mappers[0] = ZLKM_UI_RATE_FMAPPER(1.f, 1000.f, SR, &envAmp.attack);
       p3.mappers[1] = ZLKM_UI_RATE_FMAPPER(20.f, 2000.f, SR, &envAmp.decay);
-      p3.mappers[2] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &envAmp.depth);
-      p3.mappers[3] = EnvCurveMapper::make(envAmp);
+      p3.mappers[2] = ZLKM_UI_LIN_FMAPPER(0.f, 1.f, &envAmp.curve);
     }
 
     // Tab 1: Filter

@@ -63,14 +63,14 @@ class CalcisHumilis {
   struct Cfg {
     OscMode oscMode = OscSwarm;
     SwarmCfg swarmOsc;
-    float outGain = .7f;
+    float outGain = 1.f;
 
     std::array<EnvCfg, EnvCount> envs = {
-        EnvCfg{rate(1.f), rate(330.f)},         // amp
-        EnvCfg{rate(10.f), rate(20.f), 8.f},    // pitch
-        EnvCfg{rate(1.f), rate(6.f), .2f},      // click
+        EnvCfg{rate(1.f), rate(330.f), .5f},    // amp
+        EnvCfg{rate(10.f), rate(20.f), 1.f},    // pitch
+        EnvCfg{rate(1.f), rate(6.f), 1.f},      // click
         EnvCfg{rate(200.f), rate(500.f), .5f},  // swarm
-        EnvCfg{rate(10.f), rate(200.f), 1.f},   // morph
+        EnvCfg{rate(10.f), rate(200.f), .5f},   // morph
         EnvCfg{rate(1.f), rate(60.f), 0.2f},    // filter
     };
 

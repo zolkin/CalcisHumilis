@@ -24,6 +24,10 @@ class AudioCore {
     icfg.sample_rate = TR::SR;                   // 96 kHz
     icfg.channels = 2;                           // stereo
     icfg.bits_per_sample = 32;                   // 32-bit words
+  // Increase internal I2S ring buffer depth to reduce blocking in write()
+  // Defaults are small (size=512, count=6). On RP2350 we can afford more.
+  icfg.buffer_size = 2048;   // bytes per buffer; tune 1024..4096
+  icfg.buffer_count = 8;     // number of buffers in ring
     icfg.pin_bck = getPin(CurBoard::PIN_BCK);    // PCM510X BCK
     icfg.pin_ws = getPin(CurBoard::PIN_LRCK);    // PCM510X LRCK
     icfg.pin_data = getPin(CurBoard::PIN_DATA);  // PCM510X DIN
@@ -63,6 +67,7 @@ class AudioCore {
       bytesLeft_ = TR::BLOCK_BYTES;
     }
     if (bytesLeft_) {
+      ZLKM_PERF_SCOPE("AudioCore::I2S write");
       size_t wrote = i2sOut_.write(writePtr_, bytesLeft_);
       writePtr_ += wrote;
       bytesLeft_ -= wrote;
