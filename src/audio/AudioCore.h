@@ -2,6 +2,7 @@
 #include <AudioTools.h>
 
 #include "AudioTraits.h"
+#include "audio/hw/I2SStereoWriter.h"
 #include "platform/boards/Current.h"
 
 namespace zlkm::audio {
@@ -15,33 +16,27 @@ class AudioCore {
   using CurBoard = zlkm::platform::boards::Current;
   using SrcPinId = typename CurBoard::SrcPinId;
   using Feedback = typename App::Feedback;
+  using SampleT = typename TR::SampleT;
 
   int getPin(SrcPinId pin) { return zlkm::hw::io::getPin(pin).value; }
 
   AudioCore(Cfg* cfg, Feedback* fb) : app_(cfg, fb) {
-    // TODO: move device out of the core
-    auto icfg = i2sOut_.defaultConfig(TX_MODE);
-    icfg.sample_rate = TR::SR;                   // 96 kHz
-    icfg.channels = 2;                           // stereo
-    icfg.bits_per_sample = 32;                   // 32-bit words
-  // Increase internal I2S ring buffer depth to reduce blocking in write()
-  // Defaults are small (size=512, count=6). On RP2350 we can afford more.
-  icfg.buffer_size = 2048;   // bytes per buffer; tune 1024..4096
-  icfg.buffer_count = 8;     // number of buffers in ring
-    icfg.pin_bck = getPin(CurBoard::PIN_BCK);    // PCM510X BCK
-    icfg.pin_ws = getPin(CurBoard::PIN_LRCK);    // PCM510X LRCK
-    icfg.pin_data = getPin(CurBoard::PIN_DATA);  // PCM510X DIN
-    Log.notice(F("[I2S] BCK=%d WS=%d DATA=%d, %d Hz, %d-bit, ch=%d" CR),
-               icfg.pin_bck, icfg.pin_ws, icfg.pin_data, icfg.sample_rate,
-               icfg.bits_per_sample, icfg.channels);
-    bool ok = i2sOut_.begin(icfg);
+    // Direct I2S writer (no AudioTools stream)
+    hw::I2SBlockWriterCfg i2sCfg;
+    i2sCfg.bclkPin = getPin(CurBoard::PIN_BCK);
+    i2sCfg.lrckPin = getPin(CurBoard::PIN_LRCK);
+    i2sCfg.dataPin = getPin(CurBoard::PIN_DATA);
+    i2sCfg.buffers = 3;
+    i2sCfg.bufferBlocks = 2;
+    bool ok = i2s_.begin(i2sCfg);
     if (!ok) {
-      Log.error(
-          F("[I2S] begin() failed; check pins, adjacency, and wiring" CR));
+      Log.error(F("[I2S] direct begin() failed; check pins/wiring" CR));
+    } else {
+      Log.notice(F("[I2S] direct, %d Hz, %d-bit, ch=2" CR), TR::SR, TR::BITS);
     }
 
     // Prime audio
-    queueNextBlockIfNeeded_();
+    update();
 
     Log.notice(F("[Audio] %d Hz, 32-bit, block=%u" CR), TR::SR,
                (unsigned)TR::BLOCK_FRAMES);
@@ -49,44 +44,29 @@ class AudioCore {
   }
   // Called in a tight loop by MainApp on core 1
   void update() {
-    // keep I2S fed (non-blocking; double-buffered)
-    queueNextBlockIfNeeded_();
-    // Lightweight pacing hint for SDK; no sleeps in audio path
-    tight_loop_contents();
+    app_.fillBlock(audioBuffer_);
+    {
+      ZLKM_PERF_SCOPE("AudioCore::I2S writeAll");
+      i2s_.writeAll(audioBuffer_.data(), TR::BLOCK_FRAMES);
+      app_.feedback().overUnderFlowCount = i2s_.getOverUnderflowCount();
+    }
   }
 
  private:
-  // ---- audio write helper (non-blocking) ----
-  void queueNextBlockIfNeeded_() {
-    if (bytesLeft_ == 0) {
-      OutBuffer& buf = (whichBuf_ == 0) ? audioBufA_ : audioBufB_;
-      whichBuf_ ^= 1;
-      app_.fillBlock(buf);
-
-      writePtr_ = reinterpret_cast<uint8_t*>(buf.data());
-      bytesLeft_ = TR::BLOCK_BYTES;
-    }
-    if (bytesLeft_) {
-      ZLKM_PERF_SCOPE("AudioCore::I2S write");
-      size_t wrote = i2sOut_.write(writePtr_, bytesLeft_);
-      writePtr_ += wrote;
-      bytesLeft_ -= wrote;
-    }
-  }
-
   using OutBuffer = typename TR::BufferT;
 
   // double-buffering
-  alignas(8) OutBuffer audioBufA_;
-  alignas(8) OutBuffer audioBufB_;
+  alignas(8) OutBuffer audioBuffer_;
 
-  I2SStream i2sOut_;
+  hw::I2SBlockWriter<TR> i2s_;
+
   App app_;
   bool inited_ = false;
 
   int whichBuf_ = 0;
   uint8_t* writePtr_ = nullptr;
   size_t bytesLeft_ = 0;
+  // New frame-based enqueue state for direct writer
 
   // trigger edge tracking
   uint32_t lastTrigCounter_ = 0;

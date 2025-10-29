@@ -7,7 +7,7 @@ namespace zlkm::audio::proc {
 struct DriveFX {
   static inline float process(float x, float drive) {
     const float y = x * drive;
-    return math::clamp(y / (1.0f + fabsf(y)), -1.0f, 1.0f);
+    return y / (1.0f + fabsf(y));
   }
 };
 

@@ -177,9 +177,9 @@ class View {
     updateTabLEDs_();
     triggerLED_.Update();
     clippingLED_.Update();
-    if (fb_ && saturationCounter_ < fb_->saturationCounter) {
+    if (fb_ && overUnderFlowCount_ < fb_->overUnderFlowCount) {
       clippingLED_.FadeOff(80);
-      saturationCounter_ = fb_->saturationCounter;
+      overUnderFlowCount_ = fb_->overUnderFlowCount;
     }
   }
 
@@ -196,7 +196,7 @@ class View {
   JLed clippingLED_;
   // Optional feedback for clipping detection
   Feedback* fb_{};
-  int saturationCounter_ = 0;
+  int overUnderFlowCount_ = 0;
   int lastTrigCounter_ = 0;
 };
 

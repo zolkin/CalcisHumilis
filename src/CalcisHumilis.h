@@ -84,12 +84,15 @@ class CalcisHumilis {
 
   struct Feedback {
     int saturationCounter = 0;
+    int overUnderFlowCount = 0;
   };
 
   explicit CalcisHumilis(const Cfg* cfg, Feedback* fb);
 
   void trigger();
   void tickLED();
+
+  Feedback& feedback() { return *fb_; }
 
   // Fill an interleaved stereo block (nFrames = stereo frames)
   void fillBlock(OutBuffer& destLR);

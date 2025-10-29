@@ -19,16 +19,20 @@ void CalcisHumilis<TR>::trigger() {
 template <size_t N>
 static inline void array_float_to_int32(const std::array<float, N>& src,
                                         std::array<int32_t, N>& dst) {
+  static constexpr float HIGH = 2147483647.0f;
+  static constexpr float LOW = -2147483648.0f;
   for (size_t i = 0; i < N; ++i) {
-    dst[i] = int32_t(src[i] * 2147483647.0f);
+    dst[i] = int32_t(math::clamp(src[i] * HIGH, LOW, HIGH));
   }
 }
 
 template <size_t N>
 static inline void array_float_to_int24(const std::array<float, N>& src,
                                         std::array<int32_t, N>& dst) {
+  static constexpr float HIGH = 8388607.0f;
+  static constexpr float LOW = -8388608.0f;
   for (size_t i = 0; i < N; ++i) {
-    dst[i] = int32_t(src[i] * 8388607.0f) << 8;
+    dst[i] = int32_t(math::clamp(src[i] * HIGH, LOW, HIGH)) << 8;
   }
 }
 
@@ -60,17 +64,6 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
       envelopes_.update();
     }
 
-    {
-      ZLKM_PERF_SCOPE("interpolators");
-      swarmCfgItp.update();
-      calcisCfgItp.update();
-      filterCfgItp.update();
-      driveItp.update();
-      swarm.cfgUpdated();
-    }
-
-    const float g = outGain_;
-
     // ---------- No oversampling path ----------
     const float a = envelopes_.value(EnvAmp);
 
@@ -85,9 +78,21 @@ void CalcisHumilis<TR>::fillBlock(OutBuffer& destLR) {
       fMod_ = typename Filter::Mod{};
       envelopes_.resetAll();
       driveGain_ = 1.0f;
+      outGain_ = cfg_->outGain;
+      cyclesPerSample_ = swarm.cfg().cyclesPerSample;
       continue;
     }
 
+    {
+      ZLKM_PERF_SCOPE("interpolators");
+      swarmCfgItp.update();
+      calcisCfgItp.update();
+      filterCfgItp.update();
+      driveItp.update();
+      swarm.cfgUpdated();
+    }
+
+    const float g = outGain_;
     const float p = envelopes_.value(EnvPitch);
     const float c = envelopes_.value(EnvClick);
     const float sw = envelopes_.value(EnvSwarm);

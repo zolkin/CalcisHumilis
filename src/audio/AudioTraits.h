@@ -28,14 +28,17 @@ struct AudioTraits {
   using SampleT = typename IMPL::SampleT;
 
   static constexpr bool STEREO = STEREO_;
+  static constexpr int CHANNELS = STEREO ? 2 : 1;
   static constexpr int BITS = BITS_;
   static constexpr int BLOCK_FRAMES = BLOCK_FRAMES_;
   static constexpr int SR = SR_;
   static constexpr int OS = OS_;
-  static constexpr size_t BLOCK_BYTES = BLOCK_FRAMES * 2 * sizeof(SampleT);
-  static constexpr int BLOCK_ELEMS = STEREO ? BLOCK_FRAMES * 2 : BLOCK_FRAMES;
+  static constexpr int SAMPLE_SIZE = sizeof(SampleT);
+  static constexpr int FRAME_SIZE = SAMPLE_SIZE * CHANNELS;
+  static constexpr int BLOCK_BYTES = BLOCK_FRAMES * FRAME_SIZE;
+  static constexpr int BLOCK_ELEMS = BLOCK_FRAMES * CHANNELS;
 
   using BufferT = std::array<SampleT, BLOCK_ELEMS>;
 };
 
-}  // namespace zlkm
+}  // namespace zlkm::audio
